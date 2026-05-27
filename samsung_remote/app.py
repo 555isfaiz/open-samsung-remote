@@ -1,4 +1,5 @@
 import os
+import time
 from flask import Flask, jsonify, request, send_from_directory
 
 from .config import load_config
@@ -21,16 +22,19 @@ def create_app(config, tv):
         try:
             tv.send_key(keycode)
             return ok()
-        except OSError as e:
+        except Exception as e:
             return fail(str(e))
 
     @app.post("/keys")
     def keys():
         body = request.get_json(silent=True) or {}
+        raw = body.get("keys", [])
+        if not isinstance(raw, list):
+            return fail("keys must be a list", 400)
         try:
-            tv.send_keys(list(body.get("keys", [])))
+            tv.send_keys(raw)
             return ok()
-        except OSError as e:
+        except Exception as e:
             return fail(str(e))
 
     @app.post("/app/<app_id>")
@@ -38,7 +42,7 @@ def create_app(config, tv):
         try:
             tv.launch_app(app_id)
             return ok()
-        except OSError as e:
+        except Exception as e:
             return fail(str(e))
 
     @app.post("/macro/<name>")
@@ -49,7 +53,9 @@ def create_app(config, tv):
         try:
             run_macro(tv, steps)
             return ok()
-        except OSError as e:
+        except ValueError as e:
+            return fail(str(e), 400)
+        except Exception as e:
             return fail(str(e))
 
     @app.post("/wol")
@@ -84,7 +90,6 @@ def create_app(config, tv):
 
 def run_macro(tv, steps):
     """Execute a macro: ordered keys, app launches, delays, and WoL."""
-    import time
     for step in steps:
         if "delay" in step:
             time.sleep(step["delay"])
@@ -94,6 +99,8 @@ def run_macro(tv, steps):
             tv.launch_app(step["app"])
         elif step.get("wol"):
             tv.wake()
+        else:
+            raise ValueError(f"unknown macro step: {step}")
 
 
 def create_app_from_env():

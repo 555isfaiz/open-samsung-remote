@@ -89,3 +89,52 @@ def test_macro_unknown_returns_404(ctx):
     client, tv = ctx
     r = client.post("/macro/nope")
     assert r.status_code == 404
+
+
+# Fix 1: non-OSError from TV should still return 503, not 500
+def test_non_oserror_tv_failure_returns_503(ctx):
+    client, tv = ctx
+    def boom(_): raise RuntimeError("boom")
+    tv.send_key = boom
+    r = client.post("/key/KEY_VOLUP")
+    assert r.status_code == 503
+    assert r.get_json()["ok"] is False
+
+
+# Fix 2: /keys with a string value should return 400
+def test_keys_string_value_returns_400(ctx):
+    client, tv = ctx
+    r = client.post("/keys", json={"keys": "KEY_UP"})
+    assert r.status_code == 400
+    body = r.get_json()
+    assert body["ok"] is False
+    assert "list" in body["error"]
+
+
+# Fix 2: /keys with an int value should return 400
+def test_keys_int_value_returns_400(ctx):
+    client, tv = ctx
+    r = client.post("/keys", json={"keys": 42})
+    assert r.status_code == 400
+    body = r.get_json()
+    assert body["ok"] is False
+
+
+# Fix 3: macro with an unknown step key should return 400
+def test_macro_bad_step_returns_400(ctx):
+    client, tv = ctx
+    # Inject a macro with a bogus step key into the config
+    from samsung_remote.config import Config, TVConfig, AppEntry
+    cfg = Config(
+        tv=TVConfig(host="1.2.3.4", token_file="/tmp/t", mac="AA:BB:CC:DD:EE:FF"),
+        apps=[],
+        macros={"bad": [{"typo_key": "KEY_UP"}]},
+    )
+    from samsung_remote.app import create_app
+    bad_app = create_app(cfg, tv)
+    bad_client = bad_app.test_client()
+    r = bad_client.post("/macro/bad")
+    assert r.status_code == 400
+    body = r.get_json()
+    assert body["ok"] is False
+    assert "unknown macro step" in body["error"]
