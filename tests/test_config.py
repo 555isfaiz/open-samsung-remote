@@ -35,3 +35,17 @@ def test_load_config_defaults_port_8002(tmp_path):
     assert cfg.tv.port == 8002
     assert cfg.apps == []
     assert cfg.macros == {}
+
+def test_load_config_coerces_int_app_id_to_string(tmp_path):
+    p = tmp_path / "config.yaml"
+    p.write_text("tv:\n  host: 1.2.3.4\n  token_file: /data/token.txt\napps:\n  - { name: Foo, id: 12345 }\n")
+    cfg = load_config(str(p))
+    assert cfg.apps[0].id == "12345"
+    assert isinstance(cfg.apps[0].id, str)
+
+def test_load_config_name_and_mac_defaults(tmp_path):
+    p = tmp_path / "config.yaml"
+    p.write_text("tv:\n  host: 1.2.3.4\n  token_file: /data/token.txt\n")
+    cfg = load_config(str(p))
+    assert cfg.tv.name == "WebRemote"
+    assert cfg.tv.mac is None
