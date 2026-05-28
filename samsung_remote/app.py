@@ -68,7 +68,11 @@ def create_app(config, tv):
 
     @app.get("/health")
     def health():
-        return jsonify({"server": "ok", "tv_reachable": tv.reachable()})
+        return jsonify({"server": "ok"})
+
+    @app.get("/tv-status")
+    def tv_status():
+        return jsonify({"tv_reachable": tv.reachable()})
 
     @app.get("/config")
     def get_config():

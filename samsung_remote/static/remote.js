@@ -1,3 +1,14 @@
+// Block Safari pinch + double-tap zoom that survive viewport meta.
+["gesturestart", "gesturechange", "gestureend"].forEach((ev) =>
+  document.addEventListener(ev, (e) => e.preventDefault(), { passive: false })
+);
+let _lastTouchEnd = 0;
+document.addEventListener("touchend", (e) => {
+  const now = Date.now();
+  if (now - _lastTouchEnd < 300) e.preventDefault();
+  _lastTouchEnd = now;
+}, { passive: false });
+
 const toast = (msg) => {
   const t = document.getElementById("toast");
   t.textContent = msg;
