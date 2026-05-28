@@ -3,6 +3,13 @@ name: build-and-push
 on:
   push:
     branches: [main]
+    paths:
+      - 'k8s/**'
+      - 'chart/**'
+      - 'samsung_remote/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'wsgi.py'
   workflow_dispatch:
 
 jobs:
