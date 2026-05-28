@@ -19,11 +19,11 @@ jobs:
       - name: Build image
         run: |
           docker build \
-            -t rp.images.local/samsung-remote:${{ steps.vars.outputs.sha }} \
-            -t rp.images.local/samsung-remote:latest \
+            -t rp.images.local/open-samsung-remote:${{ steps.vars.outputs.sha }} \
+            -t rp.images.local/open-samsung-remote:latest \
             .
 
       - name: Push image
         run: |
-          docker push rp.images.local/samsung-remote:${{ steps.vars.outputs.sha }}
-          docker push rp.images.local/samsung-remote:latest
+          docker push rp.images.local/open-samsung-remote:${{ steps.vars.outputs.sha }}
+          docker push rp.images.local/open-samsung-remote:latest
