@@ -15,7 +15,7 @@ spec:
       releaseName: samsung-remote
       # Edit these in the Argo CD UI under App > Parameters, or here in git.
       parameters:
-        - { name: image.repository, value: "registry.local/samsung-remote" }
+        - { name: image.repository, value: "rp.images.local/open-samsung-remote" }
         - { name: image.tag,        value: "latest" }
         - { name: image.pullPolicy, value: "Always" }
         - { name: tv.host,          value: "192.168.1.50" }

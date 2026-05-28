@@ -1,5 +1,5 @@
 image:
-  repository: registry.local/samsung-remote
+  repository: rp.images.local/open-samsung-remote
   tag: latest
   pullPolicy: Always
 
