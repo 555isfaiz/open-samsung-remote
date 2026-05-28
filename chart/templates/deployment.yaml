@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: samsung-remote
+  labels:
+    app: samsung-remote
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: samsung-remote
+  template:
+    metadata:
+      labels:
+        app: samsung-remote
+    spec:
+      # hostNetwork REQUIRED: Wake-on-LAN is an L2 broadcast that the pod
+      # overlay network NATs/drops. On host network the magic packet goes out
+      # the node's real LAN interface, same subnet as the TV.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: samsung-remote
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 5000
+          env:
+            - name: CONFIG_PATH
+              value: /config/config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: token
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: samsung-remote-config
+        - name: token
+          persistentVolumeClaim:
+            claimName: samsung-remote-token

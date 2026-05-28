@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: samsung-remote
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/555isfaiz/open-samsung-remote.git
+    targetRevision: main
+    path: chart
+    helm:
+      releaseName: samsung-remote
+      # Edit these in the Argo CD UI under App > Parameters, or here in git.
+      parameters:
+        - { name: image.repository, value: "registry.local/samsung-remote" }
+        - { name: image.tag,        value: "latest" }
+        - { name: image.pullPolicy, value: "Always" }
+        - { name: tv.host,          value: "192.168.1.50" }
+        - { name: tv.mac,           value: "AA:BB:CC:DD:EE:FF" }
+        - { name: tv.name,          value: "WebRemote" }
+        - { name: ingress.host,     value: "tv.example.com" }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: samsung-remote
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

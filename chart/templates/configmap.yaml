@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: samsung-remote-config
+data:
+  config.yaml: |
+    tv:
+      host: {{ .Values.tv.host | quote }}
+      port: {{ .Values.tv.port }}
+      name: {{ .Values.tv.name | quote }}
+      mac: {{ .Values.tv.mac | quote }}
+      token_file: {{ .Values.tv.tokenFile | quote }}
+    apps:
+{{ toYaml .Values.apps | indent 6 }}
+    macros:
+{{ toYaml .Values.macros | indent 6 }}

@@ -1,0 +1,33 @@
+image:
+  repository: registry.local/samsung-remote
+  tag: latest
+  pullPolicy: Always
+
+tv:
+  host: 192.168.1.50
+  port: 8002
+  name: WebRemote
+  mac: "AA:BB:CC:DD:EE:FF"
+  tokenFile: /data/token.txt
+
+ingress:
+  enabled: true
+  className: nginx
+  host: tv.example.com
+
+storage:
+  size: 64Mi
+
+apps:
+  - { name: Netflix,   id: "3201907018807" }
+  - { name: YouTube,   id: "111299001912" }
+  - { name: Prime,     id: "3201512006785" }
+  - { name: "Disney+", id: "3201901017640" }
+
+macros:
+  movie_night:
+    - { wol: true }
+    - { delay: 8 }
+    - { key: KEY_HDMI2 }
+    - { delay: 1 }
+    - { app: "3201512006785" }

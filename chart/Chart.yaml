@@ -1,0 +1,6 @@
+apiVersion: v2
+name: samsung-remote
+description: Web remote for Samsung TVs (2020+) with macros, app launch, gesture pad, and WoL.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
