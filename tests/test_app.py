@@ -57,9 +57,18 @@ def test_wol_route(ctx):
 
 
 def test_health_route(ctx):
+    # /health is liveness only: must not probe the TV, so the readiness probe
+    # stays green even when the TV is asleep (otherwise the UI to wake it
+    # would be unreachable).
     client, tv = ctx
     r = client.get("/health")
-    assert r.get_json() == {"server": "ok", "tv_reachable": True}
+    assert r.get_json() == {"server": "ok"}
+
+
+def test_tv_status_route_reports_reachability(ctx):
+    client, tv = ctx
+    r = client.get("/tv-status")
+    assert r.get_json() == {"tv_reachable": True}
 
 
 def test_config_route_exposes_apps_and_macro_names(ctx):
