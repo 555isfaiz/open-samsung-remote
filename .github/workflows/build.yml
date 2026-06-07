@@ -25,12 +25,13 @@ jobs:
 
       - name: Build image
         run: |
-          docker build \
+          buildah bud \
+            --tls-verify=false \
             -t rp.images.local/open-samsung-remote:${{ steps.vars.outputs.sha }} \
             -t rp.images.local/open-samsung-remote:latest \
             .
 
       - name: Push image
         run: |
-          docker push rp.images.local/open-samsung-remote:${{ steps.vars.outputs.sha }}
-          docker push rp.images.local/open-samsung-remote:latest
+          buildah push --tls-verify=false rp.images.local/open-samsung-remote:${{ steps.vars.outputs.sha }}
+          buildah push --tls-verify=false rp.images.local/open-samsung-remote:latest
