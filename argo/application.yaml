@@ -14,9 +14,11 @@ spec:
     helm:
       releaseName: samsung-remote
       # Edit these in the Argo CD UI under App > Parameters, or here in git.
+      # NOTE: image.tag is intentionally NOT overridden here. CI writes the
+      # immutable tag into chart/values.yaml on each build; that git change is
+      # what Argo detects and rolls out. A parameter override would shadow it.
       parameters:
         - { name: image.repository, value: "rp.images.local/open-samsung-remote" }
-        - { name: image.tag,        value: "latest" }
         - { name: image.pullPolicy, value: "Always" }
         - { name: tv.host,          value: "192.168.1.50" }
         - { name: tv.mac,           value: "AA:BB:CC:DD:EE:FF" }
