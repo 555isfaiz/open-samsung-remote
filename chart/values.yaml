@@ -1,6 +1,6 @@
 image:
   repository: rp.images.local/open-samsung-remote
-  tag: latest
+  tag: 14946ed
   pullPolicy: Always
 
 tv:
