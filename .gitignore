@@ -5,3 +5,4 @@ venv/
 token.txt
 data/
 config.yaml
+.vscode

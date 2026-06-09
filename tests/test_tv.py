@@ -98,13 +98,15 @@ def test_heartbeat_pings_live_connection():
     assert fake.connection.pings == 1
 
 
-def test_heartbeat_resets_when_ping_fails():
+def test_heartbeat_reconnects_when_ping_fails():
     tv = make_controller()
-    fake = FakeWS()
-    fake.connection = FakeConn(ping_raises=True)
-    tv._ws = fake
+    dead = FakeWS()
+    dead.connection = FakeConn(ping_raises=True)
+    tv._ws = dead
     tv._heartbeat_tick()
-    assert tv._ws is None  # dead connection dropped
+    # Dead connection dropped and replaced with a fresh one (kept warm).
+    assert tv._ws is not None
+    assert tv._ws is not dead
 
 
 def test_heartbeat_tick_noop_without_connection():

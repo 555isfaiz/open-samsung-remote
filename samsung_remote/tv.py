@@ -110,14 +110,24 @@ class TVController:
             ws = self._ws
             conn = getattr(ws, "connection", None) if ws is not None else None
             if conn is None:
+                # Nothing established yet (or TV off). Don't open from cold here
+                # to avoid churn; a key press or wake() opens it.
                 return
             try:
                 conn.ping()
                 self._apply_keepalive(ws)
+                return
             except Exception:
-                # Connection is dead; drop it so the next key press (or the
-                # next tick) rebuilds a fresh one instead of stalling on it.
-                _LOG.warning("heartbeat: connection dead, dropping", exc_info=True)
+                # Routine: the TV drops the idle remote channel even while
+                # powered on. Not an error. Drop it and reconnect so the next
+                # key press stays fast.
+                _LOG.debug("heartbeat: websocket closed by TV, reconnecting")
+                self._reset()
+            try:
+                self._ensure_open()
+            except Exception:
+                # TV no longer reachable; stay closed and reopen on next use.
+                _LOG.debug("heartbeat: reconnect deferred, TV not ready")
                 self._reset()
 
     def _wait_reachable(self, deadline: float) -> bool:
