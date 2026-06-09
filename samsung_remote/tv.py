@@ -18,6 +18,13 @@ class TVController:
        seconds, keeping it warm so the TV never idle-closes it.
     2. TCP keepalive + TCP_USER_TIMEOUT on the socket bound how long a silently
        dropped connection can stall before the kernel tears it down.
+
+    On ``wake()`` (Wake-on-LAN), the connection is re-established in the
+    background once the TV finishes booting, so the first key press after
+    waking is fast instead of paying the cold-boot reconnect.
+
+    Background threads (heartbeat and wake warm-up) are enabled only when
+    ``heartbeat_interval`` > 0; tests pass 0 to keep behavior deterministic.
     """
 
     def __init__(self, host, port, token_file, mac=None, name="WebRemote",
@@ -32,9 +39,10 @@ class TVController:
         self._keepalive_set = False
         self._lock = threading.Lock()
         self._heartbeat_interval = heartbeat_interval
+        self._background_enabled = bool(heartbeat_interval and heartbeat_interval > 0)
         self._stop = threading.Event()
         self._hb_thread = None
-        if heartbeat_interval and heartbeat_interval > 0:
+        if self._background_enabled:
             self._hb_thread = threading.Thread(
                 target=self._heartbeat_loop, daemon=True
             )
@@ -162,6 +170,41 @@ class TVController:
         send_magic_packet(self._mac)
         with self._lock:
             self._reset()
+        # Re-establish the websocket in the background while the TV boots, so
+        # the first key press after waking is fast. Returns immediately.
+        self._start_warmup()
+
+    def _start_warmup(self, boot_timeout: float = 60.0) -> None:
+        if not self._background_enabled:
+            return
+        threading.Thread(
+            target=self._warmup, args=(boot_timeout,), daemon=True
+        ).start()
+
+    def _warmup(self, boot_timeout: float = 60.0) -> None:
+        # Wait for the TV to answer on the port (cold boot can take seconds),
+        # then open the websocket, retrying because the port may accept before
+        # the remote endpoint is ready.
+        deadline = time.monotonic() + boot_timeout
+        if not self._wait_reachable(deadline):
+            return
+        while time.monotonic() < deadline:
+            with self._lock:
+                try:
+                    self._ensure_open()
+                    return
+                except Exception:
+                    self._reset()
+            time.sleep(1.0)
+
+    def _ensure_open(self) -> None:
+        # Force the websocket open without sending a key, so it is warm and
+        # ready. open() is a no-op on the real client if already connected.
+        ws = self._conn()
+        opener = getattr(ws, "open", None)
+        if callable(opener):
+            opener()
+        self._apply_keepalive(ws)
 
     def reachable(self) -> bool:
         try:

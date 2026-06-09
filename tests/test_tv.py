@@ -113,6 +113,39 @@ def test_heartbeat_tick_noop_without_connection():
     tv._heartbeat_tick()  # must not raise
 
 
+def test_wake_triggers_warmup(monkeypatch):
+    tv = make_controller()
+    called = {}
+    monkeypatch.setattr(tv, "_start_warmup", lambda: called.setdefault("v", True))
+    monkeypatch.setattr("samsung_remote.tv.send_magic_packet", lambda mac: None)
+    tv.wake()
+    assert called.get("v") is True
+
+
+def test_warmup_opens_connection_when_reachable(monkeypatch):
+    opened = {}
+
+    class WSOpenable(FakeWS):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.connection = FakeConn()
+
+        def open(self):
+            opened["yes"] = True
+
+    tv = make_controller(ws_factory=WSOpenable)
+    monkeypatch.setattr(tv, "_wait_reachable", lambda deadline: True)
+    tv._warmup(boot_timeout=1)
+    assert opened.get("yes") is True
+
+
+def test_warmup_skips_when_unreachable(monkeypatch):
+    tv = make_controller()
+    monkeypatch.setattr(tv, "_wait_reachable", lambda deadline: False)
+    tv._warmup(boot_timeout=1)
+    assert tv._ws is None  # never opened
+
+
 def test_send_applies_tcp_keepalive():
     made = {}
 
