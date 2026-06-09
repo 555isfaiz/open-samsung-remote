@@ -1,8 +1,11 @@
+import logging
 import socket
 import threading
 import time
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
+
+_LOG = logging.getLogger(__name__)
 
 
 class TVController:
@@ -114,6 +117,7 @@ class TVController:
             except Exception:
                 # Connection is dead; drop it so the next key press (or the
                 # next tick) rebuilds a fresh one instead of stalling on it.
+                _LOG.warning("heartbeat: connection dead, dropping", exc_info=True)
                 self._reset()
 
     def _wait_reachable(self, deadline: float) -> bool:
@@ -125,13 +129,20 @@ class TVController:
                 time.sleep(0.5)
         return False
 
-    def _send_with_retry(self, fn, recovery_timeout: float = 15.0):
+    def _send_with_retry(self, fn, label: str = "action",
+                         recovery_timeout: float = 15.0):
         with self._lock:
+            _LOG.info("%s: sending", label)
+            start = time.monotonic()
             try:
                 result = fn(self._conn())
                 self._apply_keepalive(self._ws)
+                _LOG.info("%s: TV responded in %d ms", label,
+                          (time.monotonic() - start) * 1000)
                 return result
             except Exception:
+                _LOG.warning("%s: send failed, reconnecting", label,
+                             exc_info=True)
                 self._reset()
             deadline = time.monotonic() + recovery_timeout
             last_err = None
@@ -139,19 +150,26 @@ class TVController:
             while time.monotonic() < deadline:
                 if not self._wait_reachable(deadline):
                     break
+                attempts += 1
+                start = time.monotonic()
                 try:
                     result = fn(self._conn())
                     self._apply_keepalive(self._ws)
+                    _LOG.info("%s: TV responded in %d ms (retry %d)", label,
+                              (time.monotonic() - start) * 1000, attempts)
                     return result
                 except Exception as e:
                     last_err = e
+                    _LOG.warning("%s: retry %d failed", label, attempts,
+                                 exc_info=True)
                     self._reset()
-                    attempts += 1
                     time.sleep(min(0.5 * attempts, 2.0))
+            _LOG.error("%s: giving up, TV not reachable", label)
             raise last_err or TimeoutError("TV not reachable")
 
     def send_key(self, keycode: str) -> None:
-        self._send_with_retry(lambda ws: ws.send_key(keycode))
+        self._send_with_retry(lambda ws: ws.send_key(keycode),
+                              label=f"key {keycode}")
 
     def send_keys(self, keycodes: list[str], delay: float = 0.05) -> None:
         def run(ws):
@@ -159,14 +177,16 @@ class TVController:
                 if i and delay:
                     time.sleep(delay)
                 ws.send_key(key)
-        self._send_with_retry(run)
+        self._send_with_retry(run, label=f"keys {keycodes}")
 
     def launch_app(self, app_id: str) -> None:
-        self._send_with_retry(lambda ws: ws.rest_app_run(app_id))
+        self._send_with_retry(lambda ws: ws.rest_app_run(app_id),
+                              label=f"launch app {app_id}")
 
     def wake(self) -> None:
         if not self._mac:
             raise ValueError("No MAC configured for Wake-on-LAN")
+        _LOG.info("wake: sending Wake-on-LAN packet to %s", self._mac)
         send_magic_packet(self._mac)
         with self._lock:
             self._reset()
@@ -185,17 +205,23 @@ class TVController:
         # Wait for the TV to answer on the port (cold boot can take seconds),
         # then open the websocket, retrying because the port may accept before
         # the remote endpoint is ready.
+        _LOG.info("warmup: waiting for TV to boot (timeout %ds)", boot_timeout)
         deadline = time.monotonic() + boot_timeout
         if not self._wait_reachable(deadline):
+            _LOG.warning("warmup: TV not reachable within %ds, giving up",
+                         boot_timeout)
             return
         while time.monotonic() < deadline:
             with self._lock:
                 try:
                     self._ensure_open()
+                    _LOG.info("warmup: websocket established")
                     return
                 except Exception:
+                    _LOG.debug("warmup: not ready yet, retrying", exc_info=True)
                     self._reset()
             time.sleep(1.0)
+        _LOG.warning("warmup: could not open websocket before timeout")
 
     def _ensure_open(self) -> None:
         # Force the websocket open without sending a key, so it is warm and
