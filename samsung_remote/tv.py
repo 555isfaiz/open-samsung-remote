@@ -147,8 +147,8 @@ class TVController:
             try:
                 result = fn(self._conn())
                 self._apply_keepalive(self._ws)
-                _LOG.info("%s: TV responded in %d ms", label,
-                          (time.monotonic() - start) * 1000)
+                _LOG.info("%s: TV responded in %d ms, result=%r", label,
+                          (time.monotonic() - start) * 1000, result)
                 return result
             except Exception:
                 _LOG.warning("%s: send failed, reconnecting", label,
