@@ -1,6 +1,6 @@
 image:
   repository: rp.images.local/open-samsung-remote
-  tag: a2faab3
+  tag: eaba86e
   pullPolicy: Always
 
 # App log level: DEBUG | INFO | WARNING | ERROR
