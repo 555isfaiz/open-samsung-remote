@@ -3,6 +3,9 @@ image:
   tag: e6fb078
   pullPolicy: Always
 
+# App log level: DEBUG | INFO | WARNING | ERROR
+logLevel: INFO
+
 tv:
   host: 192.168.1.50
   port: 8002

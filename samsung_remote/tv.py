@@ -31,7 +31,7 @@ class TVController:
     """
 
     def __init__(self, host, port, token_file, mac=None, name="WebRemote",
-                 ws_factory=SamsungTVWS, heartbeat_interval=30.0):
+                 ws_factory=SamsungTVWS, heartbeat_interval=10.0):
         self._host = host
         self._port = port
         self._token_file = token_file
