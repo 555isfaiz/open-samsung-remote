@@ -105,6 +105,16 @@ class TVController:
         while not self._stop.wait(self._heartbeat_interval):
             self._heartbeat_tick()
 
+    def _ping_op(self, ws):
+        # Operation fed to _send_with_retry: open (if needed) and ping, so a
+        # reconnect verifies the channel is actually live.
+        opener = getattr(ws, "open", None)
+        if callable(opener):
+            opener()
+        conn = getattr(ws, "connection", None)
+        if conn is not None:
+            conn.ping()
+
     def _heartbeat_tick(self):
         with self._lock:
             ws = self._ws
@@ -119,16 +129,15 @@ class TVController:
                 return
             except Exception:
                 # Routine: the TV drops the idle remote channel even while
-                # powered on. Not an error. Drop it and reconnect so the next
-                # key press stays fast.
+                # powered on. Not an error. Drop it and reconnect (below) using
+                # the same retry path as key sends, so the next key stays fast.
                 _LOG.debug("heartbeat: websocket closed by TV, reconnecting")
                 self._reset()
-            try:
-                self._ensure_open()
-            except Exception:
-                # TV no longer reachable; stay closed and reopen on next use.
-                _LOG.debug("heartbeat: reconnect deferred, TV not ready")
-                self._reset()
+        try:
+            self._send_with_retry(self._ping_op, label="heartbeat")
+        except Exception:
+            # TV no longer reachable; stay closed and reopen on next use.
+            _LOG.debug("heartbeat: reconnect deferred, TV not ready")
 
     def _wait_reachable(self, deadline: float) -> bool:
         while time.monotonic() < deadline:
