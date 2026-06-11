@@ -31,7 +31,7 @@ class TVController:
     """
 
     def __init__(self, host, port, token_file, mac=None, name="WebRemote",
-                 ws_factory=SamsungTVWS, heartbeat_interval=10.0):
+                 ws_factory=SamsungTVWS, heartbeat_interval=5.0):
         self._host = host
         self._port = port
         self._token_file = token_file
@@ -126,6 +126,7 @@ class TVController:
             try:
                 conn.ping()
                 self._apply_keepalive(ws)
+                _LOG.debug("heartbeat: ping successful")
                 return
             except Exception:
                 # Routine: the TV drops the idle remote channel even while
@@ -135,6 +136,7 @@ class TVController:
                 self._reset()
         try:
             self._send_with_retry(self._ping_op, label="heartbeat")
+            _LOG.debug("heartbeat: websocket reconnected")
         except Exception:
             # TV no longer reachable; stay closed and reopen on next use.
             _LOG.debug("heartbeat: reconnect deferred, TV not ready")
