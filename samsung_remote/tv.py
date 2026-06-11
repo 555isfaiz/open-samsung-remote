@@ -7,6 +7,10 @@ from wakeonlan import send_magic_packet
 
 _LOG = logging.getLogger(__name__)
 
+# Keys that turn the TV off. After one is sent we mark the TV off and pause the
+# heartbeat (no point reconnecting to a powered-down set); wake() marks it on.
+_POWER_OFF_KEYS = frozenset({"KEY_POWER", "KEY_POWEROFF"})
+
 
 class TVController:
     """Talks to a Samsung TV (2020+) over WSS, owns the pairing token.
@@ -26,6 +30,10 @@ class TVController:
     background once the TV finishes booting, so the first key press after
     waking is fast instead of paying the cold-boot reconnect.
 
+    Power state is tracked: sending a power-off key marks the TV off and pauses
+    the heartbeat (no point reconnecting to a powered-down set); ``wake()``
+    marks it on and resumes.
+
     Background threads (heartbeat and wake warm-up) are enabled only when
     ``heartbeat_interval`` > 0; tests pass 0 to keep behavior deterministic.
     """
@@ -40,6 +48,7 @@ class TVController:
         self._ws_factory = ws_factory
         self._ws = None
         self._keepalive_set = False
+        self._tv_on = True   # assume on at startup; power-off key / wake update it
         self._lock = threading.Lock()
         self._heartbeat_interval = heartbeat_interval
         self._background_enabled = bool(heartbeat_interval and heartbeat_interval > 0)
@@ -117,6 +126,9 @@ class TVController:
 
     def _heartbeat_tick(self):
         with self._lock:
+            if not self._tv_on:
+                # TV is off; paused until wake() turns it back on.
+                return
             ws = self._ws
             conn = getattr(ws, "connection", None) if ws is not None else None
             if conn is None:
@@ -191,6 +203,14 @@ class TVController:
     def send_key(self, keycode: str) -> None:
         self._send_with_retry(lambda ws: ws.send_key(keycode),
                               label=f"key {keycode}")
+        if keycode in _POWER_OFF_KEYS:
+            self._mark_powered_off()
+
+    def _mark_powered_off(self) -> None:
+        _LOG.info("power: TV marked OFF, pausing heartbeat")
+        with self._lock:
+            self._tv_on = False
+            self._reset()
 
     def send_keys(self, keycodes: list[str], delay: float = 0.05) -> None:
         def run(ws):
@@ -210,7 +230,9 @@ class TVController:
         _LOG.info("wake: sending Wake-on-LAN packet to %s", self._mac)
         send_magic_packet(self._mac)
         with self._lock:
+            self._tv_on = True   # resume heartbeat
             self._reset()
+        _LOG.info("power: TV marked ON, resuming heartbeat")
         # Re-establish the websocket in the background while the TV boots, so
         # the first key press after waking is fast. Returns immediately.
         self._start_warmup()

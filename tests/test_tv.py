@@ -115,6 +115,30 @@ def test_heartbeat_tick_noop_without_connection():
     tv._heartbeat_tick()  # must not raise
 
 
+def test_power_off_key_marks_tv_off_and_pauses_heartbeat():
+    tv = make_controller()
+    tv.send_key("KEY_POWER")
+    assert tv._tv_on is False
+
+
+def test_heartbeat_paused_when_tv_off():
+    tv = make_controller()
+    fake = FakeWS()
+    fake.connection = FakeConn()
+    tv._ws = fake
+    tv._tv_on = False
+    tv._heartbeat_tick()
+    assert fake.connection.pings == 0  # paused: no ping while off
+
+
+def test_wake_marks_tv_on(monkeypatch):
+    monkeypatch.setattr("samsung_remote.tv.send_magic_packet", lambda mac: None)
+    tv = make_controller()
+    tv._tv_on = False
+    tv.wake()
+    assert tv._tv_on is True
+
+
 def test_wake_triggers_warmup(monkeypatch):
     tv = make_controller()
     called = {}
