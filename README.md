@@ -1,111 +1,138 @@
 # Samsung TV Web Remote
 
-A phone-friendly web remote for Samsung TVs (2020+), with macros, favorite-app
-launch, a gesture pad, and Wake-on-LAN. Runs as a small Flask server you can drop
-on a Pi or deploy to a Kubernetes cluster on your TV's network.
+A phone-friendly web remote for Samsung TVs (2020+, Tizen on port 8002), with
+macros, favorite-app launch, a gesture pad, and Wake-on-LAN. It is a small Flask
+server that talks to the TV over its local WebSocket API. Run it on anything on
+your TV's network: bare metal / Raspberry Pi, Docker, or Kubernetes.
 
-## Local run
+<p align="center">
+  <img src="docs/demo.PNG" alt="Web remote UI on a phone" width="320" />
+</p>
+
+## Requirements
+
+- A Samsung TV (2020 or newer) reachable on your LAN.
+- On the TV, enable **Wake-on-LAN / "Power On with Mobile"** in the network
+  settings if you want to turn it on from standby.
+- The server must sit on the **same LAN/subnet as the TV** (the WebSocket is a
+  direct local connection, and Wake-on-LAN is an L2 broadcast that does not cross
+  subnets or NAT).
+
+## Configuration
+
+All configuration is a single YAML file. Copy the example and edit it:
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+| Key            | What it is                                                      |
+|----------------|-----------------------------------------------------------------|
+| `tv.host`      | TV IP address (find it in the TV's network status screen).      |
+| `tv.port`      | `8002` for 2020+ models (TLS WebSocket). Leave as is if unsure. |
+| `tv.name`      | Name shown on the TV's "Allow this device?" prompt.             |
+| `tv.mac`       | TV MAC address, required only for Wake-on-LAN.                   |
+| `tv.token_file`| Path where the pairing token is stored (see below).            |
+| `apps`         | Favorite apps for the launch grid: `{ name, id }` (Tizen app IDs). |
+| `macros`       | Named sequences of keys / app launches / delays / `wol`.         |
+
+**Pairing:** the first key press triggers an "Allow this device?" prompt on the
+TV. Accept it once. The token is written to `tv.token_file` and reused after that,
+so that path must be persistent (a real file on bare metal, a mounted volume in
+Docker/Kubernetes).
+
+Optional environment variable: `LOG_LEVEL` (`DEBUG` | `INFO` | `WARNING` |
+`ERROR`, default `INFO`). `CONFIG_PATH` selects the config file (default
+`config.yaml`).
+
+## Run: bare metal / Raspberry Pi
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install -r requirements-dev.txt
-cp config.example.yaml config.yaml   # edit host + mac
+pip install -r requirements.txt          # or requirements-dev.txt to also run tests
+cp config.example.yaml config.yaml       # edit tv.host + tv.mac; set tv.token_file to e.g. ./token.txt
 CONFIG_PATH=config.yaml gunicorn --bind 0.0.0.0:5000 --workers 1 wsgi:app
 ```
 
-Open `http://<server-ip>:5000` on your phone. The first key press triggers an
-"Allow this device?" prompt on the TV. Accept it once; the token is saved to the
-path in `token_file` and reused after that.
+Open `http://<server-ip>:5000` on your phone (same WiFi). Use `--workers 1`: the
+pairing token and TV WebSocket are a single shared resource.
 
-## Tests
-
-```bash
-pytest
-```
-
-## Docker
+## Run: Docker
 
 ```bash
-docker build -t samsung-remote:dev .
+docker build -t samsung-remote:latest .
+
 docker run --network host \
   -v "$PWD/config.yaml:/config/config.yaml" \
   -v samsung-remote-data:/data \
-  samsung-remote:dev
+  -e CONFIG_PATH=/config/config.yaml \
+  samsung-remote:latest
 ```
-`--network host` matters: Wake-on-LAN is an L2 broadcast and will not cross the
-default bridge network.
 
-## Kubernetes
+- `--network host` is required: Wake-on-LAN is an L2 broadcast and will not cross
+  the default Docker bridge network.
+- Mount a volume at `/data` (and point `tv.token_file` at `/data/token.txt`) so the
+  pairing token survives container restarts.
 
-The project ships a Helm chart at `chart/`. All cluster nodes must be on the same
-LAN/subnet as the TV: the Deployment runs with `hostNetwork: true` so that the
-Wake-on-LAN magic packet leaves the node's real interface (the pod overlay drops
-L2 broadcasts). The pairing token lives on a PVC so it survives restarts.
+## Run: Kubernetes (Helm)
 
-### CI build (self-hosted GitHub Actions runner)
+A Helm chart is provided in `chart/`. Key requirements:
 
-On every push to `main`, `.github/workflows/build.yml` builds the image and pushes
-two tags to the private registry:
+- Cluster nodes must be on the **same LAN/subnet as the TV**. The Deployment runs
+  with `hostNetwork: true` so the Wake-on-LAN packet leaves the node's real
+  interface (the pod overlay network drops L2 broadcasts).
+- The pairing token is stored on a PVC so it survives pod restarts.
 
-- `rp.images.local/open-samsung-remote:<short-sha>`
-- `rp.images.local/open-samsung-remote:latest`
+Configure via Helm values (see `chart/values.yaml` for all options):
 
-The runner machine must have Docker installed, be able to resolve `rp.images.local`,
-and be authenticated to the registry (either via `docker login` once on the host,
-or via a workflow step using `secrets.REGISTRY_USER` / `secrets.REGISTRY_PASS`).
+| Value             | Purpose                                              |
+|-------------------|------------------------------------------------------|
+| `image.repository`, `image.tag` | Where your built image lives.          |
+| `tv.host`, `tv.mac`, `tv.name`  | TV connection + Wake-on-LAN.           |
+| `ingress.enabled`, `ingress.host`, `ingress.className` | Optional ingress. |
+| `logLevel`        | App log level (default `INFO`).                      |
+| `apps`, `macros`  | Favorite apps and macros.                            |
 
-### Manual deploy with Helm
+Build and push the image to a registry your cluster can pull from, then:
 
 ```bash
-kubectl create namespace samsung-remote
-
-cat > my-values.yaml <<'EOF'
-image:
-  repository: rp.images.local/open-samsung-remote
-  tag: <short-sha>          # from the build job
-tv:
-  host: 192.168.1.50        # real TV IP
-  mac: "AA:BB:CC:DD:EE:FF"  # real TV MAC for Wake-on-LAN
-ingress:
-  enabled: true
-  host: tv.lan.example      # DNS pointing at your ingress controller
-EOF
-
 helm upgrade --install samsung-remote chart \
-  -f my-values.yaml \
-  -n samsung-remote
+  --namespace samsung-remote --create-namespace \
+  --set image.repository=<your-registry>/samsung-remote \
+  --set image.tag=<tag> \
+  --set tv.host=<TV_IP> \
+  --set tv.mac=<TV_MAC> \
+  --set ingress.host=<dns-name>
 
 kubectl -n samsung-remote rollout status deploy/samsung-remote
 ```
 
-Update: bump `image.tag`, re-run `helm upgrade --install`. `imagePullPolicy: Always`
-plus a new tag triggers a rolling restart.
+To update, build a new image, then re-run `helm upgrade` with the new
+`image.tag`. Uninstall with `helm uninstall samsung-remote -n samsung-remote`
+(the token PVC is retained; delete it explicitly if you want a clean slate).
 
-Uninstall: `helm uninstall samsung-remote -n samsung-remote` (PVC is retained;
-delete with `kubectl delete pvc samsung-remote-token -n samsung-remote`).
+### GitOps (Argo CD)
 
-### Argo CD deploy
+`argo/application.yaml` is a sample Argo CD `Application` that deploys the Helm
+chart from this repo and exposes the values above as Argo parameters (editable in
+the Argo UI under the app's Parameters tab). Edit `repoURL`, the image and `tv.*`
+parameters for your environment, then:
 
-The Application manifest lives at `argo/application.yaml`. It points Argo at the
-Helm chart in this repo and exposes `image.repository`, `image.tag`, `tv.host`,
-`tv.mac`, `tv.name`, and `ingress.host` as parameters editable in the Argo UI.
-
-One-shot install:
 ```bash
 kubectl apply -f argo/application.yaml -n argocd
 ```
 
-Or via the Argo CD UI:
+The image tag is intentionally driven by `chart/values.yaml` (not pinned as an
+Argo parameter), so a CI job that bumps the tag in git triggers an automatic
+re-rollout. `.github/workflows/build.yml` is a sample build pipeline; adapt the
+registry, runner, and build tool to your setup.
 
-1. (Public repo, optional but cleaner) Settings > Repositories > Connect Repo via
-   HTTPS using the repo URL.
-2. Applications > New App > Edit as YAML > paste the contents of
-   `argo/application.yaml` > Create. Argo will sync within seconds.
-3. To change values without a git commit, open the app > Parameters tab > Edit,
-   then Save. Argo re-syncs immediately.
+## Tests
 
-Sync policy is `automated` with `prune` and `selfHeal`, plus `CreateNamespace=true`
-so the target namespace is created on first sync.
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Keys
 
