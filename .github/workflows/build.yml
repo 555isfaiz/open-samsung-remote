@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - 'chart/**'
       - 'samsung_remote/**'
       - 'Dockerfile'
       - 'requirements.txt'
