@@ -17,6 +17,14 @@ ingress:
   enabled: true
   className: nginx
   host: tv.example.com
+  annotations: {}
+  tls:
+    enabled: true
+    # Secret holding the cert/key. Pre-create it, or let cert-manager fill it.
+    secretName: open-samsung-remote-tls
+    # Set to a cert-manager ClusterIssuer name for auto certs (e.g. letsencrypt-prod).
+    # Leave empty to use a manually created secret.
+    clusterIssuer: ""
 
 storage:
   size: 64Mi
