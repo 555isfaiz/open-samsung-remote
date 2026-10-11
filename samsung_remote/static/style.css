@@ -16,13 +16,16 @@ html, body {
 }
 .btn:active { background: #3d6; color: #111; }
 .btn.power { background: #922; }
-.gesturepad {
-  height: 200px; margin: 14px 0; border-radius: 16px;
-  background: #1c1c1c; border: 2px dashed #444;
-  display: flex; align-items: center; justify-content: center;
-  color: #666; touch-action: none; user-select: none;
+.dpad {
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 64px);
+  grid-template-areas: ". up ." "left ok right" ". down .";
+  gap: 10px; margin: 14px 0;
 }
-.gesturepad.flash { background: #3d6; color: #111; }
+.dpad .btn { padding: 0; font-size: 20px; touch-action: none; }
+.dpad .up { grid-area: up; } .dpad .down { grid-area: down; }
+.dpad .left { grid-area: left; } .dpad .right { grid-area: right; }
+.dpad .ok { grid-area: ok; border-radius: 50%; background: #333; }
+.dpad .btn.pressed { background: #3d6; color: #111; }
 section h2 { font-size: 14px; color: #888; margin: 18px 0 8px; text-transform: uppercase; }
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .textrow { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; margin-bottom: 10px; }

@@ -54,27 +54,35 @@ kodiForm.addEventListener("submit", async (e) => {
   input.value = "";
 });
 
-// Gesture pad: swipe -> arrow key, tap -> enter.
-const pad = document.getElementById("gesturepad");
-let sx = 0, sy = 0;
-const THRESHOLD = 30; // px before a move counts as a swipe
-pad.addEventListener("touchstart", (e) => {
-  const t = e.touches[0];
-  sx = t.clientX; sy = t.clientY;
-}, { passive: true });
-pad.addEventListener("touchend", (e) => {
-  const t = e.changedTouches[0];
-  const dx = t.clientX - sx, dy = t.clientY - sy;
-  pad.classList.add("flash");
-  setTimeout(() => pad.classList.remove("flash"), 120);
-  if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) {
-    post("/key/KEY_ENTER");
-    return;
-  }
-  let key;
-  if (Math.abs(dx) > Math.abs(dy)) key = dx > 0 ? "KEY_RIGHT" : "KEY_LEFT";
-  else key = dy > 0 ? "KEY_DOWN" : "KEY_UP";
-  post(`/key/${key}`);
+// D-pad: press sends one key; holding an arrow repeats it. A repeat is skipped
+// while the previous request is still in flight so presses never pile up and
+// keep scrolling after release.
+const REPEAT_DELAY = 400; // ms before auto-repeat starts
+const REPEAT_EVERY = 120; // ms between repeats
+document.querySelectorAll("[data-dpad]").forEach((b) => {
+  const key = b.dataset.dpad;
+  const repeats = key !== "KEY_ENTER";
+  let timer = null, inflight = false;
+  const send = async () => {
+    if (inflight) return;
+    inflight = true;
+    try { await post(`/key/${key}`); } finally { inflight = false; }
+  };
+  const stop = () => {
+    clearTimeout(timer); clearInterval(timer); timer = null;
+    b.classList.remove("pressed");
+  };
+  b.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    b.setPointerCapture(e.pointerId);
+    b.classList.add("pressed");
+    send();
+    if (repeats) timer = setTimeout(() => { timer = setInterval(send, REPEAT_EVERY); }, REPEAT_DELAY);
+  });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) =>
+    b.addEventListener(ev, stop)
+  );
+  b.addEventListener("contextmenu", (e) => e.preventDefault());
 });
 
 // Build app + macro grids from /config.

@@ -6,23 +6,13 @@ import urllib.request
 
 _LOG = logging.getLogger(__name__)
 
-# Whitelisted shortcuts: name -> (JSON-RPC method, params). Input.ExecuteAction
-# acts on whatever player is active, so play/stop/subtitle need no player id.
+# Whitelisted shortcuts: name -> (JSON-RPC method, params).
 ACTIONS = {
-    "home":       ("Input.Home", {}),
-    "back":       ("Input.Back", {}),
-    "context":    ("Input.ContextMenu", {}),
-    "info":       ("Input.Info", {}),
-    "osd":        ("Input.ShowOSD", {}),
-    "fullscreen": ("GUI.SetFullscreen", {"fullscreen": "toggle"}),
-    "play_pause": ("Input.ExecuteAction", {"action": "playpause"}),
-    "stop":       ("Input.ExecuteAction", {"action": "stop"}),
-    "subtitles":  ("Input.ExecuteAction", {"action": "nextsubtitle"}),
-    "audio":      ("Input.ExecuteAction", {"action": "audionextlanguage"}),
-    "backspace":  ("Input.ExecuteAction", {"action": "backspace"}),
-    "movies":     ("GUI.ActivateWindow", {"window": "videos", "parameters": ["MovieTitles"]}),
-    "tvshows":    ("GUI.ActivateWindow", {"window": "videos", "parameters": ["TvShowTitles"]}),
-    "music":      ("GUI.ActivateWindow", {"window": "music"}),
+    "home":         ("Input.Home", {}),
+    "osd":          ("Input.ShowOSD", {}),
+    "video_addons": ("GUI.ActivateWindow",
+                     {"window": "videos", "parameters": ["addons://sources/video/"]}),
+    "backspace":    ("Input.ExecuteAction", {"action": "backspace"}),
 }
 
 

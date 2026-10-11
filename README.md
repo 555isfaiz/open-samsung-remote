@@ -1,7 +1,7 @@
 # Samsung TV Web Remote
 
 A phone-friendly web remote for Samsung TVs (2020+, Tizen on port 8002), with
-macros, favorite-app launch, a gesture pad, and Wake-on-LAN. It is a small Flask
+macros, favorite-app launch, a hold-to-repeat d-pad, and Wake-on-LAN. It is a small Flask
 server that talks to the TV over its local WebSocket API. Run it on anything on
 your TV's network: bare metal / Raspberry Pi, Docker, or Kubernetes.
 
@@ -35,7 +35,7 @@ cp config.example.yaml config.yaml
 | `tv.token_file`| Path where the pairing token is stored (see below).            |
 | `apps`         | Favorite apps for the launch grid: `{ name, id }` (Tizen app IDs). |
 | `macros`       | Named sequences of keys / app launches / delays / `wol`.         |
-| `kodi`         | Optional. `host`, `port` (default `8080`), `username`, `password` of a Kodi instance. Adds a Kodi section (home, menus, playback, text input). Enable "Allow remote control via HTTP" in Kodi. |
+| `kodi`         | Optional. `host`, `port` (default `8080`), `username`, `password` of a Kodi instance. Adds a Kodi section (home, OSD, video add-ons, text input). Enable "Allow remote control via HTTP" in Kodi. |
 
 **Pairing:** the first key press triggers an "Allow this device?" prompt on the
 TV. Accept it once. The token is written to `tv.token_file` and reused after that,

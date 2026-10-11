@@ -33,14 +33,35 @@
       <button class="btn" data-key="KEY_EXIT">Exit</button>
     </div>
 
-    <!-- Gesture pad doubles as the d-pad: swipe = arrows, tap = enter -->
-    <div id="gesturepad" class="gesturepad">Swipe / tap</div>
+    <!-- D-pad: press = one key, hold an arrow = auto-repeat -->
+    <div class="dpad">
+      <button class="btn up" data-dpad="KEY_UP">▲</button>
+      <button class="btn left" data-dpad="KEY_LEFT">◀</button>
+      <button class="btn ok" data-dpad="KEY_ENTER">OK</button>
+      <button class="btn right" data-dpad="KEY_RIGHT">▶</button>
+      <button class="btn down" data-dpad="KEY_DOWN">▼</button>
+    </div>
 
     <div class="row">
       <button class="btn" data-key="KEY_REWIND">⏪</button>
       <button class="btn" data-key="KEY_PLAY">⏯</button>
       <button class="btn" data-key="KEY_FF">⏩</button>
     </div>
+
+    <!-- Shown only when a kodi: block is configured -->
+    <section id="kodi" hidden>
+      <h2>Kodi</h2>
+      <div class="row">
+        <button class="btn" data-kodi="home">Home</button>
+        <button class="btn" data-kodi="osd">OSD</button>
+        <button class="btn" data-kodi="video_addons">Add-ons</button>
+      </div>
+      <form id="kodi-text" class="textrow">
+        <input type="text" placeholder="Text for Kodi keyboard" autocomplete="off" enterkeyhint="send" />
+        <button type="button" class="btn" data-kodi="backspace">⌫</button>
+        <button type="submit" class="btn">Send</button>
+      </form>
+    </section>
 
     <section>
       <h2>Apps</h2>
@@ -50,39 +71,6 @@
     <section>
       <h2>Macros</h2>
       <div id="macros" class="grid"></div>
-    </section>
-
-    <!-- Shown only when a kodi: block is configured -->
-    <section id="kodi" hidden>
-      <h2>Kodi</h2>
-      <div class="row">
-        <button class="btn" data-kodi="home">Home</button>
-        <button class="btn" data-kodi="back">Back</button>
-        <button class="btn" data-kodi="context">Menu</button>
-      </div>
-      <div class="row">
-        <button class="btn" data-kodi="info">Info</button>
-        <button class="btn" data-kodi="osd">OSD</button>
-        <button class="btn" data-kodi="fullscreen">Fullscreen</button>
-      </div>
-      <div class="row">
-        <button class="btn" data-kodi="play_pause">⏯</button>
-        <button class="btn" data-kodi="stop">⏹</button>
-        <button class="btn" data-kodi="subtitles">Subs</button>
-      </div>
-      <div class="row">
-        <button class="btn" data-kodi="movies">Movies</button>
-        <button class="btn" data-kodi="tvshows">TV Shows</button>
-        <button class="btn" data-kodi="music">Music</button>
-      </div>
-      <div class="row">
-        <button class="btn" data-kodi="audio">Audio</button>
-      </div>
-      <form id="kodi-text" class="textrow">
-        <input type="text" placeholder="Text for Kodi keyboard" autocomplete="off" enterkeyhint="send" />
-        <button type="button" class="btn" data-kodi="backspace">⌫</button>
-        <button type="submit" class="btn">Send</button>
-      </form>
     </section>
   </main>
 

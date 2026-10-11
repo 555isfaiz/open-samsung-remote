@@ -34,15 +34,15 @@ def test_action_posts_jsonrpc_to_kodi():
 
 def test_action_with_params():
     opener = FakeOpener()
-    KodiController("h", opener=opener).action("movies")
+    KodiController("h", opener=opener).action("video_addons")
     body = opener.body()
     assert body["method"] == "GUI.ActivateWindow"
-    assert body["params"] == {"window": "videos", "parameters": ["MovieTitles"]}
+    assert body["params"] == {"window": "videos", "parameters": ["addons://sources/video/"]}
 
 
 def test_basic_auth_header():
     opener = FakeOpener()
-    KodiController("h", username="kodi", password="secret", opener=opener).action("back")
+    KodiController("h", username="kodi", password="secret", opener=opener).action("osd")
     expected = "Basic " + base64.b64encode(b"kodi:secret").decode()
     assert opener.requests[0].get_header("Authorization") == expected
 
@@ -73,5 +73,5 @@ def test_request_ids_increment():
     opener = FakeOpener()
     kodi = KodiController("h", opener=opener)
     kodi.action("home")
-    kodi.action("back")
+    kodi.action("osd")
     assert opener.body(0)["id"] != opener.body(1)["id"]
