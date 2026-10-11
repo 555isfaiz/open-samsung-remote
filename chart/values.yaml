@@ -29,6 +29,14 @@ ingress:
 storage:
   size: 64Mi
 
+# Optional Kodi JSON-RPC target. Leave empty to hide the Kodi section.
+# Note: rendered into the ConfigMap, so the password is not secret.
+kodi: {}
+#  host: 192.168.1.103
+#  port: 8080
+#  username: kodi
+#  password: kodi
+
 apps:
   - { name: Netflix,   id: "3201907018807" }
   - { name: YouTube,   id: "111299001912" }

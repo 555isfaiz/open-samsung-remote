@@ -49,3 +49,19 @@ def test_load_config_name_and_mac_defaults(tmp_path):
     cfg = load_config(str(p))
     assert cfg.tv.name == "WebRemote"
     assert cfg.tv.mac is None
+
+def test_load_config_kodi_absent_is_none(tmp_path):
+    p = tmp_path / "config.yaml"
+    p.write_text("tv:\n  host: 1.2.3.4\n  token_file: /data/token.txt\n")
+    assert load_config(str(p)).kodi is None
+
+def test_load_config_kodi_block(tmp_path):
+    p = tmp_path / "config.yaml"
+    p.write_text(
+        "tv:\n  host: 1.2.3.4\n  token_file: /data/token.txt\n"
+        "kodi:\n  host: 192.168.1.103\n  username: kodi\n  password: pw\n"
+    )
+    kodi = load_config(str(p)).kodi
+    assert kodi.host == "192.168.1.103"
+    assert kodi.port == 8080
+    assert kodi.username == "kodi" and kodi.password == "pw"

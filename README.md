@@ -35,6 +35,7 @@ cp config.example.yaml config.yaml
 | `tv.token_file`| Path where the pairing token is stored (see below).            |
 | `apps`         | Favorite apps for the launch grid: `{ name, id }` (Tizen app IDs). |
 | `macros`       | Named sequences of keys / app launches / delays / `wol`.         |
+| `kodi`         | Optional. `host`, `port` (default `8080`), `username`, `password` of a Kodi instance. Adds a Kodi section (home, menus, playback, text input). Enable "Allow remote control via HTTP" in Kodi. |
 
 **Pairing:** the first key press triggers an "Allow this device?" prompt on the
 TV. Accept it once. The token is written to `tv.token_file` and reused after that,
@@ -92,6 +93,7 @@ Configure via Helm values (see `chart/values.yaml` for all options):
 | `ingress.enabled`, `ingress.host`, `ingress.className` | Optional ingress. |
 | `logLevel`        | App log level (default `INFO`).                      |
 | `apps`, `macros`  | Favorite apps and macros.                            |
+| `kodi`            | Optional Kodi target (`host`, `port`, `username`, `password`). |
 
 Build and push the image to a registry your cluster can pull from, then:
 

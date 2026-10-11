@@ -10,6 +10,10 @@ data:
       name: {{ .Values.tv.name | quote }}
       mac: {{ .Values.tv.mac | quote }}
       token_file: {{ .Values.tv.tokenFile | quote }}
+    {{- with .Values.kodi }}
+    kodi:
+{{ toYaml . | indent 6 }}
+    {{- end }}
     apps:
 {{ toYaml .Values.apps | indent 6 }}
     macros:

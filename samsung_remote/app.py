@@ -4,13 +4,14 @@ import time
 from flask import Flask, jsonify, request, send_from_directory
 
 from .config import load_config
+from .kodi import KodiController
 from .tv import TVController
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _LOG = logging.getLogger(__name__)
 
 
-def create_app(config, tv):
+def create_app(config, tv, kodi=None):
     app = Flask(__name__, static_folder=None)
 
     def ok():
@@ -74,6 +75,34 @@ def create_app(config, tv):
         except ValueError as e:
             return fail("wol", str(e), 400)
 
+    @app.post("/kodi/action/<name>")
+    def kodi_action(name):
+        if kodi is None:
+            return fail(f"kodi {name}", "kodi not configured", 404)
+        _LOG.info("request: kodi %s", name)
+        try:
+            kodi.action(name)
+            return ok()
+        except ValueError as e:
+            return fail(f"kodi {name}", str(e), 400)
+        except Exception as e:
+            return fail(f"kodi {name}", f"Kodi: {e}")
+
+    @app.post("/kodi/text")
+    def kodi_text():
+        if kodi is None:
+            return fail("kodi text", "kodi not configured", 404)
+        body = request.get_json(silent=True) or {}
+        text = body.get("text")
+        if not isinstance(text, str):
+            return fail("kodi text", "text must be a string", 400)
+        _LOG.info("request: kodi text (%d chars)", len(text))
+        try:
+            kodi.send_text(text, done=bool(body.get("done", True)))
+            return ok()
+        except Exception as e:
+            return fail("kodi text", f"Kodi: {e}")
+
     @app.get("/health")
     def health():
         return jsonify({"server": "ok"})
@@ -87,6 +116,7 @@ def create_app(config, tv):
         return jsonify({
             "apps": [{"name": a.name, "id": a.id} for a in config.apps],
             "macros": list(config.macros.keys()),
+            "kodi": kodi is not None,
         })
 
     @app.get("/")
@@ -137,4 +167,10 @@ def create_app_from_env():
         host=cfg.tv.host, port=cfg.tv.port, token_file=cfg.tv.token_file,
         mac=cfg.tv.mac, name=cfg.tv.name,
     )
-    return create_app(cfg, tv)
+    kodi = None
+    if cfg.kodi:
+        kodi = KodiController(
+            host=cfg.kodi.host, port=cfg.kodi.port,
+            username=cfg.kodi.username, password=cfg.kodi.password,
+        )
+    return create_app(cfg, tv, kodi)

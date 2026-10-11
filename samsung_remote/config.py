@@ -12,6 +12,14 @@ class TVConfig:
 
 
 @dataclass
+class KodiConfig:
+    host: str
+    port: int = 8080
+    username: str | None = None
+    password: str | None = None
+
+
+@dataclass
 class AppEntry:
     name: str
     id: str
@@ -22,6 +30,7 @@ class Config:
     tv: TVConfig
     apps: list[AppEntry] = field(default_factory=list)
     macros: dict[str, list[dict]] = field(default_factory=dict)
+    kodi: KodiConfig | None = None
 
 
 def load_config(path: str) -> Config:
@@ -37,4 +46,13 @@ def load_config(path: str) -> Config:
     )
     apps = [AppEntry(name=a["name"], id=str(a["id"])) for a in raw.get("apps", [])]
     macros = raw.get("macros", {}) or {}
-    return Config(tv=tv, apps=apps, macros=macros)
+    kodi = None
+    kodi_raw = raw.get("kodi")
+    if kodi_raw:
+        kodi = KodiConfig(
+            host=kodi_raw["host"],
+            port=kodi_raw.get("port", 8080),
+            username=kodi_raw.get("username"),
+            password=kodi_raw.get("password"),
+        )
+    return Config(tv=tv, apps=apps, macros=macros, kodi=kodi)

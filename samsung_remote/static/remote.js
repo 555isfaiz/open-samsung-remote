@@ -40,6 +40,19 @@ document.querySelectorAll("[data-key]").forEach((b) =>
 document.querySelectorAll("[data-wol]").forEach((b) =>
   b.addEventListener("click", () => post("/wol"))
 );
+document.querySelectorAll("[data-kodi]").forEach((b) =>
+  b.addEventListener("click", () => post(`/kodi/action/${b.dataset.kodi}`))
+);
+
+// Kodi text: fills Kodi's on-screen keyboard (must be open) and submits it.
+const kodiForm = document.getElementById("kodi-text");
+kodiForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = kodiForm.querySelector("input");
+  if (!input.value) return;
+  await post("/kodi/text", { text: input.value, done: true });
+  input.value = "";
+});
 
 // Gesture pad: swipe -> arrow key, tap -> enter.
 const pad = document.getElementById("gesturepad");
@@ -88,5 +101,6 @@ async function buildGrids() {
     b.addEventListener("click", () => post(`/macro/${name}`));
     macros.appendChild(b);
   });
+  document.getElementById("kodi").hidden = !cfg.kodi;
 }
 buildGrids();

@@ -25,6 +25,12 @@ html, body {
 .gesturepad.flash { background: #3d6; color: #111; }
 section h2 { font-size: 14px; color: #888; margin: 18px 0 8px; text-transform: uppercase; }
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.textrow { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; margin-bottom: 10px; }
+.textrow .btn { padding: 18px 14px; }
+.textrow input {
+  min-width: 0; background: #1c1c1c; color: #eee; border: 2px solid #444;
+  border-radius: 12px; padding: 0 12px; font-size: 16px;
+}
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: #922; color: #fff; padding: 10px 18px; border-radius: 10px;

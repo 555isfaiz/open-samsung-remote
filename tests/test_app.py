@@ -147,3 +147,70 @@ def test_macro_bad_step_returns_400(ctx):
     body = r.get_json()
     assert body["ok"] is False
     assert "unknown macro step" in body["error"]
+
+
+class FakeKodi:
+    def __init__(self):
+        self.actions = []
+        self.texts = []
+
+    def action(self, name):
+        if name == "nope":
+            raise ValueError(f"unknown kodi action: {name}")
+        self.actions.append(name)
+
+    def send_text(self, text, done=True): self.texts.append((text, done))
+
+
+@pytest.fixture
+def kodi_ctx():
+    cfg = Config(tv=TVConfig(host="1.2.3.4", token_file="/tmp/t"))
+    kodi = FakeKodi()
+    return create_app(cfg, FakeTV(), kodi).test_client(), kodi
+
+
+def test_kodi_action_route(kodi_ctx):
+    client, kodi = kodi_ctx
+    r = client.post("/kodi/action/home")
+    assert r.status_code == 200 and r.get_json() == {"ok": True}
+    assert kodi.actions == ["home"]
+
+
+def test_kodi_unknown_action_returns_400(kodi_ctx):
+    client, kodi = kodi_ctx
+    r = client.post("/kodi/action/nope")
+    assert r.status_code == 400
+
+
+def test_kodi_failure_returns_503(kodi_ctx):
+    client, kodi = kodi_ctx
+    def boom(_): raise OSError("connection refused")
+    kodi.action = boom
+    r = client.post("/kodi/action/home")
+    assert r.status_code == 503
+    assert r.get_json()["ok"] is False
+
+
+def test_kodi_text_route(kodi_ctx):
+    client, kodi = kodi_ctx
+    r = client.post("/kodi/text", json={"text": "star wars"})
+    assert r.status_code == 200
+    assert kodi.texts == [("star wars", True)]
+
+
+def test_kodi_text_requires_string(kodi_ctx):
+    client, kodi = kodi_ctx
+    r = client.post("/kodi/text", json={"text": 5})
+    assert r.status_code == 400
+    assert kodi.texts == []
+
+
+def test_kodi_routes_404_when_not_configured(ctx):
+    client, tv = ctx
+    assert client.post("/kodi/action/home").status_code == 404
+    assert client.post("/kodi/text", json={"text": "x"}).status_code == 404
+
+
+def test_config_route_reports_kodi_flag(ctx, kodi_ctx):
+    assert ctx[0].get("/config").get_json()["kodi"] is False
+    assert kodi_ctx[0].get("/config").get_json()["kodi"] is True

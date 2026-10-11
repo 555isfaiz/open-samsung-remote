@@ -4,6 +4,13 @@ tv:
   name: WebRemote
   mac: "AA:BB:CC:DD:EE:FF"   # for Wake-on-LAN; find via your router or `arp`
   token_file: /data/token.txt
+# Optional: Kodi (JSON-RPC over HTTP). Remove this block to hide the Kodi section.
+# In Kodi: Settings > Services > Control > "Allow remote control via HTTP".
+kodi:
+  host: 192.168.1.103
+  port: 8080
+  username: kodi        # omit username/password if Kodi has no auth set
+  password: kodi
 apps:
   - { name: Netflix,   id: "11101200001" }
   - { name: YouTube,   id: "111299001912" }
