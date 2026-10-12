@@ -35,7 +35,7 @@ cp config.example.yaml config.yaml
 | `tv.token_file`| Path where the pairing token is stored (see below).            |
 | `apps`         | Favorite apps for the launch grid: `{ name, id }` (Tizen app IDs). |
 | `macros`       | Named sequences of keys / app launches / delays / `wol`.         |
-| `kodi`         | Optional. `host`, `port` (default `8080`), `username`, `password` of a Kodi instance. Adds a Kodi section (home, OSD, video add-ons, text input). Enable "Allow remote control via HTTP" in Kodi. |
+| `kodi`         | Optional. `host`, `port` (default `8080`), `username`, `password` of a Kodi instance. Adds a Kodi section (home, OSD, video add-ons, back to player, stop, playlist, text input). Enable "Allow remote control via HTTP" in Kodi. |
 
 **Pairing:** the first key press triggers an "Allow this device?" prompt on the
 TV. Accept it once. The token is written to `tv.token_file` and reused after that,

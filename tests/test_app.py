@@ -176,6 +176,14 @@ def test_kodi_action_route(kodi_ctx):
     assert kodi.actions == ["home"]
 
 
+@pytest.mark.parametrize("name", ["back_to_player", "stop_playing", "playlist"])
+def test_new_kodi_action_routes(kodi_ctx, name):
+    client, kodi = kodi_ctx
+    r = client.post(f"/kodi/action/{name}")
+    assert r.status_code == 200 and r.get_json() == {"ok": True}
+    assert kodi.actions == [name]
+
+
 def test_kodi_unknown_action_returns_400(kodi_ctx):
     client, kodi = kodi_ctx
     r = client.post("/kodi/action/nope")
@@ -209,6 +217,14 @@ def test_kodi_routes_404_when_not_configured(ctx):
     client, tv = ctx
     assert client.post("/kodi/action/home").status_code == 404
     assert client.post("/kodi/text", json={"text": "x"}).status_code == 404
+
+
+@pytest.mark.parametrize("name", ["back_to_player", "stop_playing", "playlist"])
+def test_new_kodi_actions_404_when_not_configured(ctx, name):
+    client, _ = ctx
+    r = client.post(f"/kodi/action/{name}")
+    assert r.status_code == 404
+    assert r.get_json() == {"ok": False, "error": "kodi not configured"}
 
 
 def test_config_route_reports_kodi_flag(ctx, kodi_ctx):

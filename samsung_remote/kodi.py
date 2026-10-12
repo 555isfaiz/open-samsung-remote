@@ -15,6 +15,15 @@ ACTIONS = {
     "backspace":    ("Input.ExecuteAction", {"action": "backspace"}),
 }
 
+# GUI.Window values from Kodi's JSON-RPC schema. Pick the window for the
+# active media rather than treating "back to player" as navigation Back.
+PLAYER_WINDOWS = {
+    "video": "fullscreenvideo",
+    "audio": "visualisation",
+    "picture": "slideshow",
+}
+PLAYLIST_WINDOWS = {"video": "videoplaylist", "audio": "musicplaylist"}
+
 
 class KodiError(Exception):
     pass
@@ -54,6 +63,22 @@ class KodiController:
         return data.get("result")
 
     def action(self, name):
+        if name == "back_to_player":
+            for player in self.call("Player.GetActivePlayers") or []:
+                window = PLAYER_WINDOWS.get(player["type"])
+                if window:
+                    return self.call("GUI.ActivateWindow", {"window": window})
+            raise KodiError("no active player")
+        if name == "stop_playing":
+            for player in self.call("Player.GetActivePlayers") or []:
+                self.call("Player.Stop", {"playerid": player["playerid"]})
+            return None
+        if name == "playlist":
+            players = self.call("Player.GetActivePlayers") or []
+            media = next((player["type"] for player in players
+                          if player["type"] in PLAYLIST_WINDOWS), "video")
+            return self.call("GUI.ActivateWindow",
+                             {"window": PLAYLIST_WINDOWS[media]})
         if name not in ACTIONS:
             raise ValueError(f"unknown kodi action: {name}")
         method, params = ACTIONS[name]
