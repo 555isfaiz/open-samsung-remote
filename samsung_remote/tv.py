@@ -4,6 +4,7 @@ import threading
 import time
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
+from websocket import ABNF, WebSocketTimeoutException
 
 _LOG = logging.getLogger(__name__)
 
@@ -11,19 +12,60 @@ _LOG = logging.getLogger(__name__)
 # heartbeat (no point reconnecting to a powered-down set); wake() marks it on.
 _POWER_OFF_KEYS = frozenset({"KEY_POWER", "KEY_POWEROFF"})
 
+# How long the heartbeat waits for the TV to answer our ping.
+_PONG_TIMEOUT = 3.0
+
+
+class _Reader:
+    """Drains one websocket connection on a daemon thread.
+
+    The TV sends its own websocket PING roughly every 6 seconds and closes the
+    connection (~30s) if they go unanswered. websocket-client only answers
+    pings from inside ``recv``, so something must keep reading. This loop does
+    that (``recv_data_frame`` replies PONG automatically), discards the TV's
+    event messages so they don't pile up, records our PONGs for the
+    heartbeat, and flags the connection dead once the TV closes it.
+    """
+
+    def __init__(self, conn):
+        self.conn = conn
+        self.dead = threading.Event()
+        self.pong = threading.Event()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        while True:
+            try:
+                op, _ = self.conn.recv_data_frame(control_frame=True)
+            except WebSocketTimeoutException:
+                continue  # just a quiet period
+            except Exception:
+                break  # socket closed / reset
+            if op == ABNF.OPCODE_PONG:
+                self.pong.set()
+            elif op == ABNF.OPCODE_CLOSE:
+                break
+        _LOG.debug("reader: connection closed")
+        self.dead.set()
+
 
 class TVController:
     """Talks to a Samsung TV (2020+) over WSS, owns the pairing token.
 
-    The TV silently closes the remote websocket after it has been idle for a
-    few minutes, and home routers drop idle NAT flows. A dead-but-not-reset
-    socket is the worst case: the next key press stalls on TCP retransmits
-    before the failure surfaces, which is the "sudden long delay" symptom.
+    The TV pings the remote websocket every few seconds and drops the client
+    if it does not answer; it also closes idle channels, and home routers
+    drop idle NAT flows. A dead-but-not-reset socket is the worst case: the
+    next key press stalls or fails before the failure surfaces, which is the
+    "sudden long delay" symptom.
 
-    Two defenses keep that off the key-press path:
-    1. A background heartbeat pings the websocket every ``heartbeat_interval``
-       seconds, keeping it warm so the TV never idle-closes it.
-    2. TCP keepalive + TCP_USER_TIMEOUT on the socket bound how long a silently
+    Three defenses keep that off the key-press path:
+    1. A per-connection reader thread (``_Reader``) answers the TV's pings and
+       notices immediately when the TV closes the socket; the next key press
+       then reconnects up front instead of writing into a dead socket.
+    2. A background heartbeat pings the websocket every ``heartbeat_interval``
+       seconds and waits for the PONG, so liveness is actually verified, and
+       reconnects when it is missing.
+    3. TCP keepalive + TCP_USER_TIMEOUT on the socket bound how long a silently
        dropped connection can stall before the kernel tears it down.
 
     On ``wake()`` (Wake-on-LAN), the connection is re-established in the
@@ -47,6 +89,7 @@ class TVController:
         self._name = name
         self._ws_factory = ws_factory
         self._ws = None
+        self._reader = None
         self._keepalive_set = False
         self._tv_on = True   # assume on at startup; power-off key / wake update it
         self._lock = threading.Lock()
@@ -63,6 +106,11 @@ class TVController:
     def _conn(self):
         # Lazily build the connection so import never blocks on the network.
         # key_press_delay=0 disables the library's 1s post-send sleep.
+        if self._reader is not None and self._reader.dead.is_set():
+            # TV already closed this socket; reconnect now rather than
+            # writing into it and paying for the failure.
+            _LOG.info("connection closed by TV, reconnecting")
+            self._reset()
         if self._ws is None:
             self._ws = self._ws_factory(
                 host=self._host, port=self._port,
@@ -78,7 +126,25 @@ class TVController:
         except Exception:
             pass
         self._ws = None
+        self._reader = None  # its thread exits once the socket is closed
         self._keepalive_set = False
+
+    def _prepare(self, ws):
+        # Called after every successful operation on a connection.
+        self._apply_keepalive(ws)
+        self._ensure_reader(ws)
+
+    def _ensure_reader(self, ws):
+        # One reader per live connection. Only with background threads
+        # enabled, and only for real websocket objects (tests use fakes).
+        if not self._background_enabled:
+            return
+        conn = getattr(ws, "connection", None)
+        if conn is None or not hasattr(conn, "recv_data_frame"):
+            return
+        if self._reader is not None and self._reader.conn is conn:
+            return
+        self._reader = _Reader(conn)
 
     def _apply_keepalive(self, ws):
         # Set once per connection. Bounds how long a dead socket can stall a
@@ -135,22 +201,40 @@ class TVController:
                 # Nothing established yet (or TV off). Don't open from cold here
                 # to avoid churn; a key press or wake() opens it.
                 return
-            try:
-                conn.ping()
-                self._apply_keepalive(ws)
-                _LOG.debug("heartbeat: ping successful")
-                return
-            except Exception:
-                # Routine: the TV drops the idle remote channel even while
-                # powered on. Not an error. Drop it and reconnect (below) using
-                # the same retry path as key sends, so the next key stays fast.
-                _LOG.debug("heartbeat: websocket closed by TV, reconnecting")
+            reader = self._reader
+            sent = False
+            if reader is None or not reader.dead.is_set():
+                try:
+                    if reader is not None:
+                        reader.pong.clear()
+                    conn.ping()
+                    self._apply_keepalive(ws)
+                    sent = True
+                except Exception:
+                    pass
+        # Wait for the PONG outside the lock so key presses aren't blocked.
+        # Without a reader (tests) a successful write is all we can check.
+        alive = sent and (reader is None or (
+            reader.pong.wait(_PONG_TIMEOUT) and not reader.dead.is_set()))
+        if alive:
+            _LOG.debug("heartbeat: pong received")
+            return
+        # The TV dropped the channel (routine, even while powered on) or it
+        # stopped answering. Drop it and reconnect so the next key is fast.
+        _LOG.info("heartbeat: connection lost, reconnecting")
+        with self._lock:
+            if self._ws is ws:
                 self._reset()
+        if not self.reachable():
+            # TV off or gone; don't hold the lock in a retry loop. A key
+            # press or wake() reopens it.
+            _LOG.debug("heartbeat: reconnect deferred, TV not reachable")
+            return
         try:
-            self._send_with_retry(self._ping_op, label="heartbeat")
-            _LOG.debug("heartbeat: websocket reconnected")
+            self._send_with_retry(self._ping_op, label="heartbeat",
+                                  recovery_timeout=3.0)
+            _LOG.info("heartbeat: websocket reconnected")
         except Exception:
-            # TV no longer reachable; stay closed and reopen on next use.
             _LOG.debug("heartbeat: reconnect deferred, TV not ready")
 
     def _wait_reachable(self, deadline: float) -> bool:
@@ -169,7 +253,7 @@ class TVController:
             start = time.monotonic()
             try:
                 result = fn(self._conn())
-                self._apply_keepalive(self._ws)
+                self._prepare(self._ws)
                 _LOG.info("%s: TV responded in %d ms, result=%r", label,
                           (time.monotonic() - start) * 1000, result)
                 return result
@@ -187,7 +271,7 @@ class TVController:
                 start = time.monotonic()
                 try:
                     result = fn(self._conn())
-                    self._apply_keepalive(self._ws)
+                    self._prepare(self._ws)
                     _LOG.info("%s: TV responded in %d ms (retry %d)", label,
                               (time.monotonic() - start) * 1000, attempts)
                     return result
@@ -273,7 +357,7 @@ class TVController:
         opener = getattr(ws, "open", None)
         if callable(opener):
             opener()
-        self._apply_keepalive(ws)
+        self._prepare(ws)
 
     def reachable(self) -> bool:
         try:

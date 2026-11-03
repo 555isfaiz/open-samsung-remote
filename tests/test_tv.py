@@ -1,4 +1,9 @@
-from samsung_remote.tv import TVController
+import threading
+
+from websocket import ABNF, WebSocketTimeoutException
+
+from samsung_remote import tv as tv_mod
+from samsung_remote.tv import TVController, _Reader
 
 
 class FakeWS:
@@ -98,8 +103,9 @@ def test_heartbeat_pings_live_connection():
     assert fake.connection.pings == 1
 
 
-def test_heartbeat_reconnects_when_ping_fails():
+def test_heartbeat_reconnects_when_ping_fails(monkeypatch):
     tv = make_controller()
+    monkeypatch.setattr(tv, "reachable", lambda: True)
     dead = FakeWS()
     dead.connection = FakeConn(ping_raises=True)
     tv._ws = dead
@@ -185,3 +191,78 @@ def test_send_applies_tcp_keepalive():
     tv.send_key("KEY_OK")
     # At least SO_KEEPALIVE was set on the underlying socket.
     assert made["ws"].connection.sock.opts
+
+
+def test_heartbeat_skips_reconnect_when_unreachable(monkeypatch):
+    tv = make_controller()
+    monkeypatch.setattr(tv, "reachable", lambda: False)
+    dead = FakeWS()
+    dead.connection = FakeConn(ping_raises=True)
+    tv._ws = dead
+    tv._heartbeat_tick()
+    assert tv._ws is None  # dropped, no retry loop holding the lock
+
+
+class ScriptedConn(FakeConn):
+    """Feeds _Reader a scripted sequence of frames / exceptions."""
+
+    def __init__(self, script):
+        super().__init__()
+        self.script = list(script)
+        self.done = threading.Event()
+
+    def recv_data_frame(self, control_frame=False):
+        if not self.script:
+            self.done.set()
+            raise OSError("closed")
+        item = self.script.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item, None
+
+
+def test_reader_records_pong_and_survives_timeouts():
+    conn = ScriptedConn([
+        ABNF.OPCODE_PING, WebSocketTimeoutException("quiet"),
+        ABNF.OPCODE_TEXT, ABNF.OPCODE_PONG,
+    ])
+    r = _Reader(conn)
+    assert r.dead.wait(2)  # script exhausted -> socket "closed"
+    assert r.pong.is_set()
+
+
+def test_reader_marks_dead_on_close_frame():
+    conn = ScriptedConn([ABNF.OPCODE_CLOSE, ABNF.OPCODE_PONG])
+    r = _Reader(conn)
+    assert r.dead.wait(2)
+    assert not r.pong.is_set()  # stopped at CLOSE
+
+
+def test_send_reconnects_first_when_reader_saw_close():
+    tv = make_controller()
+    stale = FakeWS()
+    tv._ws = stale
+    reader = type("R", (), {})()
+    reader.dead = threading.Event()
+    reader.dead.set()
+    tv._reader = reader
+    tv.send_key("KEY_OK")
+    assert tv._ws is not stale  # fresh connection used
+    assert stale.keys == []
+    assert tv._ws.keys == ["KEY_OK"]
+
+
+def test_heartbeat_reconnects_when_no_pong(monkeypatch):
+    monkeypatch.setattr(tv_mod, "_PONG_TIMEOUT", 0.01)
+    tv = make_controller()
+    monkeypatch.setattr(tv, "reachable", lambda: True)
+    silent = FakeWS()
+    silent.connection = FakeConn()
+    tv._ws = silent
+    reader = type("R", (), {})()
+    reader.dead = threading.Event()
+    reader.pong = threading.Event()  # never set: TV doesn't answer
+    tv._reader = reader
+    tv._heartbeat_tick()
+    assert silent.connection.pings == 1
+    assert tv._ws is not silent
