@@ -17,13 +17,30 @@ const toast = (msg) => {
   toast._t = setTimeout(() => t.classList.remove("show"), 2000);
 };
 
+// Latency diagnostics: compare the full round trip with the server's own time
+// (Server-Timing header). A big gap means the delay is between phone and
+// server (Wi-Fi, DNS, TLS, ingress), not in the app or the TV link.
+const SLOW_MS = 1000;
+function reportTiming(path, res, t0) {
+  const total = Math.round(performance.now() - t0);
+  if (total < SLOW_MS) return;
+  const m = /dur=([\d.]+)/.exec(res.headers.get("Server-Timing") || "");
+  const server = m ? Math.round(parseFloat(m[1])) : null;
+  console.warn(`slow ${path}: total ${total}ms, server ${server}ms`);
+  toast(`Slow: ${total}ms total, server ${server ?? "?"}ms`);
+  navigator.sendBeacon?.("/client-timing",
+    JSON.stringify({ path, total, server }));
+}
+
 async function post(path, body) {
   try {
+    const t0 = performance.now();
     const res = await fetch(path, {
       method: "POST",
       headers: body ? { "Content-Type": "application/json" } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
+    reportTiming(path, res, t0);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       toast(data.error || `Error ${res.status}`);

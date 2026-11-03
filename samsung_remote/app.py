@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, g, jsonify, request, send_from_directory
 
 from .config import load_config
 from .kodi import KodiController
@@ -13,6 +13,29 @@ _LOG = logging.getLogger(__name__)
 
 def create_app(config, tv, kodi=None):
     app = Flask(__name__, static_folder=None)
+
+    @app.before_request
+    def _start_timer():
+        g.t0 = time.monotonic()
+
+    @app.after_request
+    def _server_timing(resp):
+        # Total time spent in the server (incl. waiting for the TV lock). The
+        # page compares it with the full round trip to locate slowness.
+        t0 = g.get("t0")
+        if t0 is not None:
+            resp.headers["Server-Timing"] = (
+                f"app;dur={(time.monotonic() - t0) * 1000:.1f}")
+        return resp
+
+    @app.post("/client-timing")
+    def client_timing():
+        # Beacon from the page when a request was slow end to end.
+        body = request.get_json(silent=True, force=True) or {}
+        _LOG.warning("slow request seen by client: path=%s total=%sms "
+                     "server=%sms", body.get("path"), body.get("total"),
+                     body.get("server"))
+        return "", 204
 
     def ok():
         return jsonify({"ok": True})

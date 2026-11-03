@@ -230,3 +230,18 @@ def test_new_kodi_actions_404_when_not_configured(ctx, name):
 def test_config_route_reports_kodi_flag(ctx, kodi_ctx):
     assert ctx[0].get("/config").get_json()["kodi"] is False
     assert kodi_ctx[0].get("/config").get_json()["kodi"] is True
+
+
+def test_responses_carry_server_timing(ctx):
+    client, _ = ctx
+    r = client.post("/key/KEY_VOLUP")
+    assert r.headers["Server-Timing"].startswith("app;dur=")
+
+
+def test_client_timing_beacon_logged(ctx, caplog):
+    client, _ = ctx
+    # sendBeacon posts text/plain, so the route must parse JSON regardless.
+    r = client.post("/client-timing", data='{"path": "/key/KEY_UP", '
+                    '"total": 5200, "server": 3}', content_type="text/plain")
+    assert r.status_code == 204
+    assert "total=5200ms server=3ms" in caplog.text

@@ -248,13 +248,17 @@ class TVController:
 
     def _send_with_retry(self, fn, label: str = "action",
                          recovery_timeout: float = 15.0):
+        queued = time.monotonic()
         with self._lock:
-            _LOG.info("%s: sending", label)
             start = time.monotonic()
+            _LOG.info("%s: sending (waited %d ms for lock)", label,
+                      (start - queued) * 1000)
             try:
                 result = fn(self._conn())
                 self._prepare(self._ws)
-                _LOG.info("%s: TV responded in %d ms, result=%r", label,
+                # The TV never acknowledges keys: this only measures handing
+                # the frame to the local socket, not the TV acting on it.
+                _LOG.info("%s: written to socket in %d ms, result=%r", label,
                           (time.monotonic() - start) * 1000, result)
                 return result
             except Exception:
@@ -272,7 +276,7 @@ class TVController:
                 try:
                     result = fn(self._conn())
                     self._prepare(self._ws)
-                    _LOG.info("%s: TV responded in %d ms (retry %d)", label,
+                    _LOG.info("%s: written to socket in %d ms (retry %d)", label,
                               (time.monotonic() - start) * 1000, attempts)
                     return result
                 except Exception as e:
