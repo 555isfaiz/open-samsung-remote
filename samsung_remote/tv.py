@@ -203,10 +203,15 @@ class TVController:
                 return
             ws = self._ws
             conn = getattr(ws, "connection", None) if ws is not None else None
-            if conn is None:
-                # Nothing established yet (or TV off). Don't open from cold here
-                # to avoid churn; a key press or wake() opens it.
-                return
+            cold = conn is None
+        if cold:
+            # No connection yet (fresh start, or a previous reconnect failed).
+            # Open it now so a key press never pays the ~1.3s handshake.
+            self._open_if_reachable("connection opened")
+            return
+        with self._lock:
+            if self._ws is not ws:
+                return  # replaced meanwhile
             reader = self._reader
             sent = False
             if reader is None or not reader.dead.is_set():
@@ -235,17 +240,26 @@ class TVController:
         with self._lock:
             if self._ws is ws:
                 self._reset()
+        self._open_if_reachable("websocket reconnected")
+
+    def _open_if_reachable(self, what: str) -> None:
+        # Single quiet attempt; the next heartbeat tick retries. Checks the
+        # port first (outside the lock) so a TV that is off never holds the
+        # lock or spams the log.
         if not self.reachable():
-            # TV off or gone; don't hold the lock in a retry loop. A key
-            # press or wake() reopens it.
-            _LOG.debug("heartbeat: reconnect deferred, TV not reachable")
+            _LOG.debug("heartbeat: TV not reachable, connect deferred")
             return
-        try:
-            self._send_with_retry(self._ping_op, label="heartbeat",
-                                  recovery_timeout=3.0)
-            _LOG.info("heartbeat: websocket reconnected")
-        except Exception:
-            _LOG.debug("heartbeat: reconnect deferred, TV not ready")
+        with self._lock:
+            if not self._tv_on:
+                return
+            if getattr(self._ws, "connection", None) is not None:
+                return  # a key press opened it meanwhile
+            try:
+                self._ensure_open()
+                _LOG.info("heartbeat: %s", what)
+            except Exception as e:
+                _LOG.debug("heartbeat: connect failed (%s), will retry", e)
+                self._reset()
 
     def _wait_reachable(self, deadline: float) -> bool:
         while time.monotonic() < deadline:

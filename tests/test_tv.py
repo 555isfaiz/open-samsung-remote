@@ -115,10 +115,39 @@ def test_heartbeat_reconnects_when_ping_fails(monkeypatch):
     assert tv._ws is not dead
 
 
-def test_heartbeat_tick_noop_without_connection():
+def test_heartbeat_tick_without_connection_waits_when_unreachable(monkeypatch):
     tv = make_controller()
+    monkeypatch.setattr(tv, "reachable", lambda: False)
     tv._ws = None
     tv._heartbeat_tick()  # must not raise
+    assert tv._ws is None
+
+
+def test_heartbeat_opens_cold_connection_when_reachable(monkeypatch):
+    opened = []
+
+    class WSOpenable(FakeWS):
+        def open(self):
+            opened.append(self)
+            self.connection = FakeConn()
+
+    tv = make_controller(ws_factory=WSOpenable)
+    monkeypatch.setattr(tv, "reachable", lambda: True)
+    tv._heartbeat_tick()
+    assert len(opened) == 1  # warmed before any key press
+    tv.send_key("KEY_OK")
+    assert tv._ws is opened[0] and opened[0].keys == ["KEY_OK"]
+
+
+def test_heartbeat_cold_open_failure_is_quiet(monkeypatch):
+    class WSBroken(FakeWS):
+        def open(self):
+            raise OSError("not ready")
+
+    tv = make_controller(ws_factory=WSBroken)
+    monkeypatch.setattr(tv, "reachable", lambda: True)
+    tv._heartbeat_tick()  # must not raise
+    assert tv._ws is None  # retried on next tick
 
 
 def test_power_off_key_marks_tv_off_and_pauses_heartbeat():
