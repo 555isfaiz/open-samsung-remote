@@ -37,8 +37,8 @@ def create_app(config, tv, kodi=None):
         # Beacon from the page when a request was slow end to end.
         body = request.get_json(silent=True, force=True) or {}
         _LOG.warning("slow request seen by client: path=%s total=%sms "
-                     "server=%sms", body.get("path"), body.get("total"),
-                     body.get("server"))
+                     "server=%sms phases=%s", body.get("path"),
+                     body.get("total"), body.get("server"), body.get("phases"))
         return "", 204
 
     def ok():

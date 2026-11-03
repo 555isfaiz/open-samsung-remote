@@ -18,19 +18,47 @@ const toast = (msg) => {
 };
 
 // Latency diagnostics: compare the full round trip with the server's own time
-// (Server-Timing header). A big gap means the delay is between phone and
-// server (Wi-Fi, DNS, TLS, ingress), not in the app or the TV link.
+// (Server-Timing header), and break the network part down with the Resource
+// Timing API (queueing, DNS, TCP/TLS connect, waiting for the response).
 const SLOW_MS = 1000;
+function phases(url) {
+  const e = performance.getEntriesByName(new URL(url, location.href).href).pop();
+  if (!e) return null;
+  const d = (a, b) => (a && b ? Math.round(b - a) : 0);
+  return {
+    queued: d(e.startTime, e.domainLookupStart || e.connectStart || e.requestStart),
+    dns: d(e.domainLookupStart, e.domainLookupEnd),
+    connect: d(e.connectStart, e.connectEnd),          // includes TLS
+    tls: d(e.secureConnectionStart, e.connectEnd),
+    reused: e.connectStart === e.connectEnd,
+    ttfb: d(e.requestStart, e.responseStart),          // send -> first byte
+    proto: e.nextHopProtocol,
+  };
+}
 function reportTiming(path, res, t0) {
   const total = Math.round(performance.now() - t0);
   if (total < SLOW_MS) return;
   const m = /dur=([\d.]+)/.exec(res.headers.get("Server-Timing") || "");
   const server = m ? Math.round(parseFloat(m[1])) : null;
-  console.warn(`slow ${path}: total ${total}ms, server ${server}ms`);
+  const ph = phases(path);
+  console.warn(`slow ${path}: total ${total}ms, server ${server}ms`, ph);
   toast(`Slow: ${total}ms total, server ${server ?? "?"}ms`);
   navigator.sendBeacon?.("/client-timing",
-    JSON.stringify({ path, total, server }));
+    JSON.stringify({ path, total, server, phases: ph }));
 }
+
+// Keep the phone -> server path warm while the page is visible: an idle
+// HTTPS connection gets closed (ingress keepalive), and the next press then
+// pays DNS + TCP + TLS again. A tiny GET every 15s keeps it open and the DNS
+// entry cached; also warm it immediately when the page comes back to view.
+const WARM_EVERY = 15000;
+const warm = () => {
+  if (document.visibilityState === "visible")
+    fetch("/health", { cache: "no-store" }).catch(() => {});
+};
+setInterval(warm, WARM_EVERY);
+document.addEventListener("visibilitychange", warm);
+window.addEventListener("pageshow", warm);
 
 async function post(path, body) {
   try {
@@ -40,9 +68,11 @@ async function post(path, body) {
       headers: body ? { "Content-Type": "application/json" } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
+    const text = await res.text();  // complete the response so its timing entry exists
     reportTiming(path, res, t0);
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
+      let data = {};
+      try { data = JSON.parse(text); } catch {}
       toast(data.error || `Error ${res.status}`);
     }
   } catch (e) {
