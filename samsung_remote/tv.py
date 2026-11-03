@@ -2,6 +2,12 @@ import logging
 import socket
 import threading
 import time
+
+try:  # Linux-only diagnostics (see _trace_ack)
+    import fcntl
+    import termios
+except ImportError:  # pragma: no cover
+    fcntl = termios = None
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
 from websocket import ABNF, WebSocketTimeoutException
@@ -207,6 +213,7 @@ class TVController:
                 try:
                     if reader is not None:
                         reader.pong.clear()
+                    ping_at = time.monotonic()
                     conn.ping()
                     self._apply_keepalive(ws)
                     sent = True
@@ -217,7 +224,10 @@ class TVController:
         alive = sent and (reader is None or (
             reader.pong.wait(_PONG_TIMEOUT) and not reader.dead.is_set()))
         if alive:
-            _LOG.debug("heartbeat: pong received")
+            rtt = (time.monotonic() - ping_at) * 1000
+            # A slow pong means the server<->TV network path itself is slow.
+            _LOG.log(logging.WARNING if rtt > 500 else logging.DEBUG,
+                     "heartbeat: pong received in %d ms", rtt)
             return
         # The TV dropped the channel (routine, even while powered on) or it
         # stopped answering. Drop it and reconnect so the next key is fast.
@@ -289,10 +299,45 @@ class TVController:
             raise last_err or TimeoutError("TV not reachable")
 
     def send_key(self, keycode: str) -> None:
-        self._send_with_retry(lambda ws: ws.send_key(keycode),
-                              label=f"key {keycode}")
+        label = f"key {keycode}"
+        self._send_with_retry(lambda ws: ws.send_key(keycode), label=label)
+        self._trace_ack(label)
         if keycode in _POWER_OFF_KEYS:
             self._mark_powered_off()
+
+    def _trace_ack(self, label: str, timeout: float = 10.0) -> None:
+        # Diagnostic: the TV never replies to keys, but its TCP stack ACKs the
+        # bytes. Watch the socket's unacknowledged-bytes counter (Linux
+        # TIOCOUTQ) and log when it drains, i.e. when the key reached the TV.
+        # Runs in the background so the HTTP response isn't delayed.
+        if not self._background_enabled or fcntl is None or termios is None:
+            return
+        conn = getattr(self._ws, "connection", None)
+        sock = getattr(conn, "sock", None)
+        if sock is None:
+            return
+        try:
+            fd = sock.fileno()
+        except Exception:
+            return
+        start = time.monotonic()
+
+        def watch():
+            buf = bytearray(4)
+            while time.monotonic() - start < timeout:
+                try:
+                    fcntl.ioctl(fd, termios.TIOCOUTQ, buf)
+                except OSError:
+                    return  # socket closed / unsupported
+                if int.from_bytes(buf, "little") == 0:
+                    ms = (time.monotonic() - start) * 1000
+                    _LOG.log(logging.WARNING if ms > 500 else logging.INFO,
+                             "%s: TV acked in %d ms", label, ms)
+                    return
+                time.sleep(0.005)
+            _LOG.warning("%s: TV did not ack within %ds", label, timeout)
+
+        threading.Thread(target=watch, daemon=True).start()
 
     def _mark_powered_off(self) -> None:
         _LOG.info("power: TV marked OFF, pausing heartbeat")

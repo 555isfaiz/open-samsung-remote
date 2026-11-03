@@ -245,3 +245,9 @@ def test_client_timing_beacon_logged(ctx, caplog):
                     '"total": 5200, "server": 3}', content_type="text/plain")
     assert r.status_code == 204
     assert "total=5200ms server=3ms" in caplog.text
+
+
+def test_page_and_static_not_cached(ctx):
+    client, _ = ctx
+    assert client.get("/").headers["Cache-Control"] == "no-cache"
+    assert client.get("/static/remote.js").headers["Cache-Control"] == "no-cache"

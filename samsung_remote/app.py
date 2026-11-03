@@ -26,6 +26,10 @@ def create_app(config, tv, kodi=None):
         if t0 is not None:
             resp.headers["Server-Timing"] = (
                 f"app;dur={(time.monotonic() - t0) * 1000:.1f}")
+        if request.path == "/" or request.path.startswith("/static/"):
+            # Always revalidate (cheap 304 via ETag) so phones never keep
+            # running a stale remote.js after a deploy.
+            resp.headers["Cache-Control"] = "no-cache"
         return resp
 
     @app.post("/client-timing")
