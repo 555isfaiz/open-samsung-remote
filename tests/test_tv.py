@@ -17,8 +17,8 @@ class FakeWS:
         self.connection = None
         FakeWS.last = self
 
-    def send_key(self, key):
-        self.keys.append(key)
+    def send_key(self, key, cmd="Click"):
+        self.keys.append(key if cmd == "Click" else (cmd, key))
 
     def rest_app_run(self, app_id):
         self.apps_run.append(app_id)
@@ -295,3 +295,31 @@ def test_heartbeat_reconnects_when_no_pong(monkeypatch):
     tv._heartbeat_tick()
     assert silent.connection.pings == 1
     assert tv._ws is not silent
+
+
+def test_press_and_release_send_native_commands():
+    tv = make_controller()
+    tv.press_key("KEY_DOWN")
+    tv.release_key("KEY_DOWN")
+    assert FakeWS.last.keys == [("Press", "KEY_DOWN"), ("Release", "KEY_DOWN")]
+    assert tv._held == {}
+
+
+def test_press_without_release_auto_releases():
+    import time
+    tv = make_controller()
+    tv.press_key("KEY_UP", max_hold=0.05)
+    deadline = time.monotonic() + 2
+    while ("Release", "KEY_UP") not in FakeWS.last.keys:
+        assert time.monotonic() < deadline, "no auto-release"
+        time.sleep(0.01)
+    assert FakeWS.last.keys == [("Press", "KEY_UP"), ("Release", "KEY_UP")]
+
+
+def test_release_cancels_watchdog():
+    import time
+    tv = make_controller()
+    tv.press_key("KEY_UP", max_hold=0.05)
+    tv.release_key("KEY_UP")
+    time.sleep(0.15)
+    assert FakeWS.last.keys == [("Press", "KEY_UP"), ("Release", "KEY_UP")]

@@ -21,6 +21,11 @@ _POWER_OFF_KEYS = frozenset({"KEY_POWER", "KEY_POWEROFF"})
 # How long the heartbeat waits for the TV to answer our ping.
 _PONG_TIMEOUT = 3.0
 
+# A held key (press_key) is released automatically after this long, so a
+# lost release request (phone locked, network drop) never leaves the TV
+# repeating a key forever.
+_MAX_HOLD = 10.0
+
 
 class _Reader:
     """Drains one websocket connection on a daemon thread.
@@ -99,6 +104,8 @@ class TVController:
         self._keepalive_set = False
         self._tv_on = True   # assume on at startup; power-off key / wake update it
         self._lock = threading.Lock()
+        self._held = {}  # keycode -> watchdog Timer for keys in Press state
+        self._held_lock = threading.Lock()
         self._heartbeat_interval = heartbeat_interval
         self._background_enabled = bool(heartbeat_interval and heartbeat_interval > 0)
         self._stop = threading.Event()
@@ -358,6 +365,39 @@ class TVController:
         with self._lock:
             self._tv_on = False
             self._reset()
+
+    def press_key(self, keycode: str, max_hold: float = _MAX_HOLD) -> None:
+        """Start holding a key: the TV auto-repeats it natively until
+        release_key, so nothing queues up and repeat stops on release."""
+        self._send_with_retry(lambda ws: ws.send_key(keycode, cmd="Press"),
+                              label=f"press {keycode}")
+        timer = threading.Timer(max_hold, self._auto_release, (keycode,))
+        timer.daemon = True
+        with self._held_lock:
+            old = self._held.pop(keycode, None)
+            self._held[keycode] = timer
+        if old:
+            old.cancel()
+        timer.start()
+
+    def release_key(self, keycode: str) -> None:
+        with self._held_lock:
+            timer = self._held.pop(keycode, None)
+        if timer:
+            timer.cancel()
+        self._send_with_retry(lambda ws: ws.send_key(keycode, cmd="Release"),
+                              label=f"release {keycode}",
+                              recovery_timeout=3.0)
+
+    def _auto_release(self, keycode: str) -> None:
+        with self._held_lock:
+            if self._held.get(keycode) is None:
+                return
+        _LOG.warning("press %s: no release received, auto-releasing", keycode)
+        try:
+            self.release_key(keycode)
+        except Exception:
+            _LOG.warning("press %s: auto-release failed", keycode, exc_info=True)
 
     def send_keys(self, keycodes: list[str], delay: float = 0.05) -> None:
         def run(ws):

@@ -12,6 +12,8 @@ class FakeTV:
         self._reachable = True
 
     def send_key(self, k): self.keys.append(k)
+    def press_key(self, k): self.keys.append(("press", k))
+    def release_key(self, k): self.keys.append(("release", k))
     def send_keys(self, ks, delay=0.1): self.batches.append(ks)
     def launch_app(self, a): self.apps.append(a)
     def wake(self): self.woke = True
@@ -35,6 +37,13 @@ def test_key_route(ctx):
     r = client.post("/key/KEY_VOLUP")
     assert r.status_code == 200 and r.get_json() == {"ok": True}
     assert tv.keys == ["KEY_VOLUP"]
+
+
+def test_press_release_routes(ctx):
+    client, tv = ctx
+    assert client.post("/key/KEY_UP/press").status_code == 200
+    assert client.post("/key/KEY_UP/release").status_code == 200
+    assert tv.keys == [("press", "KEY_UP"), ("release", "KEY_UP")]
 
 
 def test_keys_batch_route(ctx):

@@ -57,6 +57,24 @@ def create_app(config, tv, kodi=None):
         except Exception as e:
             return fail(f"key {keycode}", str(e))
 
+    @app.post("/key/<keycode>/press")
+    def key_press(keycode):
+        _LOG.info("request: press %s", keycode)
+        try:
+            tv.press_key(keycode)
+            return ok()
+        except Exception as e:
+            return fail(f"press {keycode}", str(e))
+
+    @app.post("/key/<keycode>/release")
+    def key_release(keycode):
+        _LOG.info("request: release %s", keycode)
+        try:
+            tv.release_key(keycode)
+            return ok()
+        except Exception as e:
+            return fail(f"release {keycode}", str(e))
+
     @app.post("/keys")
     def keys():
         body = request.get_json(silent=True) or {}

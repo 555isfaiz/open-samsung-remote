@@ -101,34 +101,45 @@ kodiForm.addEventListener("submit", async (e) => {
   input.value = "";
 });
 
-// D-pad: press sends one key; holding an arrow repeats it. A repeat is skipped
-// while the previous request is still in flight so presses never pile up and
-// keep scrolling after release.
-const REPEAT_DELAY = 400; // ms before auto-repeat starts
-const REPEAT_EVERY = 120; // ms between repeats
+// D-pad: pressing sends one key right away. Holding an arrow past HOLD_DELAY sends a native
+// "press" and the TV auto-repeats the key itself until we send "release" on
+// lift, so repeat stops the moment the finger does (no queued key backlog).
+// The server auto-releases if the release request is ever lost.
+const HOLD_DELAY = 400; // ms before a press becomes a hold
 document.querySelectorAll("[data-dpad]").forEach((b) => {
   const key = b.dataset.dpad;
-  const repeats = key !== "KEY_ENTER";
-  let timer = null, inflight = false;
-  const send = async () => {
-    if (inflight) return;
-    inflight = true;
-    try { await post(`/key/${key}`); } finally { inflight = false; }
+  const holds = key !== "KEY_ENTER";
+  let timer = null, down = false, pressing = null; // pressing: in-flight press promise
+  const start = (e) => {
+    e.preventDefault();
+    if (down) return;
+    down = true;
+    try { b.setPointerCapture(e.pointerId); } catch {}
+    b.classList.add("pressed");
+    post(`/key/${key}`);
+    if (!holds) return;
+    timer = setTimeout(() => {
+      timer = null;
+      pressing = post(`/key/${key}/press`);
+    }, HOLD_DELAY);
   };
   const stop = () => {
-    clearTimeout(timer); clearInterval(timer); timer = null;
+    if (!down) return;
+    down = false;
     b.classList.remove("pressed");
+    clearTimeout(timer); timer = null; // tap: the key already went out
+    if (pressing) { // release only after the press reached the server
+      const p = pressing; pressing = null;
+      p.then(() => post(`/key/${key}/release`));
+    }
   };
-  b.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    b.setPointerCapture(e.pointerId);
-    b.classList.add("pressed");
-    send();
-    if (repeats) timer = setTimeout(() => { timer = setInterval(send, REPEAT_EVERY); }, REPEAT_DELAY);
-  });
+  b.addEventListener("pointerdown", start);
   ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) =>
     b.addEventListener(ev, stop)
   );
+  // Phone locked / tab switched mid-hold: release right away.
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
+  window.addEventListener("pagehide", stop);
   b.addEventListener("contextmenu", (e) => e.preventDefault());
 });
 
